@@ -1,0 +1,112 @@
+[
+  {
+    "id": "cs001",
+    "name": "Jakarta Central Station",
+    "location": {
+      "lat": -6.1751,
+      "lng": 106.8650
+    },
+    "chargingSpeed": 50,
+    "connectorTypes": ["CCS", "CHAdeMO"],
+    "amenities": ["cafe", "restroom", "wifi"]
+  },
+  {
+    "id": "cs002",
+    "name": "Bandung Fast Charging",
+    "location": {
+      "lat": -6.9175,
+      "lng": 107.6191
+    },
+    "chargingSpeed": 100,
+    "connectorTypes": ["CCS", "CHAdeMO", "Type 2"],
+    "amenities": ["cafe", "restroom", "wifi", "shopping"]
+  },
+  {
+    "id": "cs003",
+    "name": "Surabaya EV Charging Hub",
+    "location": {
+      "lat": -7.2575,
+      "lng": 112.7521
+    },
+    "chargingSpeed": 75,
+    "connectorTypes": ["CCS", "CHAdeMO"],
+    "amenities": ["restroom", "convenience store"]
+  },
+  {
+    "id": "cs004",
+    "name": "Semarang Charging Point",
+    "location": {
+      "lat": -6.9932,
+      "lng": 110.4203
+    },
+    "chargingSpeed": 50,
+    "connectorTypes": ["CCS", "Type 2"],
+    "amenities": ["cafe", "restroom"]
+  },
+  {
+    "id": "cs005",
+    "name": "Yogyakarta EV Station",
+    "location": {
+      "lat": -7.7971,
+      "lng": 110.3688
+    },
+    "chargingSpeed": 60,
+    "connectorTypes": ["CCS", "CHAdeMO", "Type 2"],
+    "amenities": ["cafe", "restroom", "wifi", "shopping"]
+  },
+  {
+    "id": "cs006",
+    "name": "Solo Charging Center",
+    "location": {
+      "lat": -7.5655,
+      "lng": 110.8243
+    },
+    "chargingSpeed": 45,
+    "connectorTypes": ["CCS", "Type 2"],
+    "amenities": ["restroom"]
+  },
+  {
+    "id": "cs007",
+    "name": "Malang EV Charging",
+    "location": {
+      "lat": -7.9666,
+      "lng": 112.6326
+    },
+    "chargingSpeed": 50,
+    "connectorTypes": ["CCS", "CHAdeMO"],
+    "amenities": ["cafe", "restroom", "wifi"]
+  },
+  {
+    "id": "cs008",
+    "name": "Bali Denpasar Charging",
+    "location": {
+      "lat": -8.6705,
+      "lng": 115.2126
+    },
+    "chargingSpeed": 100,
+    "connectorTypes": ["CCS", "CHAdeMO", "Type 2"],
+    "amenities": ["cafe", "restroom", "wifi", "shopping"]
+  },
+  {
+    "id": "cs009",
+    "name": "Medan EV Station",
+    "location": {
+      "lat": 3.5896,
+      "lng": 98.6738
+    },
+    "chargingSpeed": 75,
+    "connectorTypes": ["CCS", "CHAdeMO"],
+    "amenities": ["cafe", "restroom"]
+  },
+  {
+    "id": "cs010",
+    "name": "Makassar Charging Hub",
+    "location": {
+      "lat": -5.1477,
+      "lng": 119.4327
+    },
+    "chargingSpeed": 60,
+    "connectorTypes": ["CCS", "Type 2"],
+    "amenities": ["restroom", "wifi"]
+  }
+] 

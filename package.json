@@ -1,0 +1,25 @@
+{
+  "name": "ev-trip-planner",
+  "version": "1.0.0",
+  "description": "AI-Powered EV Trip Planner for Indonesia",
+  "main": "src/backend/server.js",
+  "scripts": {
+    "start": "node src/backend/server.js",
+    "dev": "nodemon src/backend/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["ev", "trip planner", "ai", "routing", "indonesia", "a-star"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "leaflet": "^1.9.4",
+    "leaflet-routing-machine": "^3.2.12",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+} 

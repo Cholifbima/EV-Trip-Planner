@@ -1,0 +1,56 @@
+[
+  {
+    "id": "v001",
+    "name": "Tesla Model 3",
+    "batteryCapacity": 60,
+    "range": 400,
+    "efficiency": 0.15,
+    "fastChargingRate": 150,
+    "connectorType": "CCS"
+  },
+  {
+    "id": "v002",
+    "name": "Hyundai Ioniq 5",
+    "batteryCapacity": 72.6,
+    "range": 450,
+    "efficiency": 0.161,
+    "fastChargingRate": 220,
+    "connectorType": "CCS"
+  },
+  {
+    "id": "v003",
+    "name": "Nissan Leaf",
+    "batteryCapacity": 40,
+    "range": 240,
+    "efficiency": 0.167,
+    "fastChargingRate": 50,
+    "connectorType": "CHAdeMO"
+  },
+  {
+    "id": "v004",
+    "name": "BMW i4",
+    "batteryCapacity": 83.9,
+    "range": 520,
+    "efficiency": 0.161,
+    "fastChargingRate": 200,
+    "connectorType": "CCS"
+  },
+  {
+    "id": "v005",
+    "name": "Wuling Air EV",
+    "batteryCapacity": 26.7,
+    "range": 200,
+    "efficiency": 0.1335,
+    "fastChargingRate": 40,
+    "connectorType": "Type 2"
+  },
+  {
+    "id": "v006",
+    "name": "Hyundai Kona Electric",
+    "batteryCapacity": 64,
+    "range": 400,
+    "efficiency": 0.16,
+    "fastChargingRate": 100,
+    "connectorType": "CCS"
+  }
+] 

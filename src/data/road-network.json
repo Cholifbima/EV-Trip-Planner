@@ -1,0 +1,140 @@
+{
+  "nodes": [
+    {
+      "id": "jakarta",
+      "name": "Jakarta",
+      "location": { "lat": -6.1751, "lng": 106.8650 }
+    },
+    {
+      "id": "bandung",
+      "name": "Bandung",
+      "location": { "lat": -6.9175, "lng": 107.6191 }
+    },
+    {
+      "id": "semarang",
+      "name": "Semarang",
+      "location": { "lat": -6.9932, "lng": 110.4203 }
+    },
+    {
+      "id": "surabaya",
+      "name": "Surabaya",
+      "location": { "lat": -7.2575, "lng": 112.7521 }
+    },
+    {
+      "id": "yogyakarta",
+      "name": "Yogyakarta",
+      "location": { "lat": -7.7971, "lng": 110.3688 }
+    },
+    {
+      "id": "solo",
+      "name": "Solo",
+      "location": { "lat": -7.5655, "lng": 110.8243 }
+    },
+    {
+      "id": "malang",
+      "name": "Malang",
+      "location": { "lat": -7.9666, "lng": 112.6326 }
+    },
+    {
+      "id": "denpasar",
+      "name": "Denpasar",
+      "location": { "lat": -8.6705, "lng": 115.2126 }
+    },
+    {
+      "id": "medan",
+      "name": "Medan",
+      "location": { "lat": 3.5896, "lng": 98.6738 }
+    },
+    {
+      "id": "makassar",
+      "name": "Makassar",
+      "location": { "lat": -5.1477, "lng": 119.4327 }
+    }
+  ],
+  "edges": [
+    {
+      "from": "jakarta",
+      "to": "bandung",
+      "distance": 150,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "jakarta",
+      "to": "semarang",
+      "distance": 450,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "bandung",
+      "to": "semarang",
+      "distance": 330,
+      "condition": "medium",
+      "type": "highway"
+    },
+    {
+      "from": "bandung",
+      "to": "yogyakarta",
+      "distance": 400,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "semarang",
+      "to": "surabaya",
+      "distance": 350,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "semarang",
+      "to": "yogyakarta",
+      "distance": 120,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "yogyakarta",
+      "to": "solo",
+      "distance": 60,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "solo",
+      "to": "surabaya",
+      "distance": 260,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "surabaya",
+      "to": "malang",
+      "distance": 100,
+      "condition": "good",
+      "type": "highway"
+    },
+    {
+      "from": "surabaya",
+      "to": "denpasar",
+      "distance": 300,
+      "condition": "medium",
+      "type": "ferry+highway"
+    },
+    {
+      "from": "makassar",
+      "to": "denpasar",
+      "distance": 650,
+      "condition": "medium",
+      "type": "ferry"
+    },
+    {
+      "from": "medan",
+      "to": "jakarta",
+      "distance": 1900,
+      "condition": "variable",
+      "type": "highway+ferry"
+    }
+  ]
+} 

@@ -1,0 +1,233 @@
+/* General Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  color: #333;
+  background-color: #f4f6f8;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Header */
+header {
+  background-color: #1e88e5;
+  color: white;
+  text-align: center;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+header h1 {
+  font-size: 1.8rem;
+  margin-bottom: 0.2rem;
+}
+
+header p {
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+/* Main Container */
+.container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 350px;
+  background-color: white;
+  padding: 1.5rem;
+  overflow-y: auto;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+}
+
+/* Form Elements */
+.form-section {
+  margin-bottom: 2rem;
+}
+
+.form-section h2 {
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+  color: #1e88e5;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  background-color: white;
+}
+
+.primary-btn {
+  background-color: #1e88e5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  width: 100%;
+  transition: background-color 0.2s;
+}
+
+.primary-btn:hover {
+  background-color: #1976d2;
+}
+
+.primary-btn:disabled {
+  background-color: #b1b1b1;
+  cursor: not-allowed;
+}
+
+/* Results Section */
+.results-section {
+  margin-top: 2rem;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 1.5rem;
+}
+
+.results-section h2 {
+  font-size: 1.3rem;
+  color: #1e88e5;
+  margin-bottom: 1rem;
+}
+
+.result-info {
+  background-color: #f5f7fa;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.result-item {
+  margin-bottom: 0.5rem;
+}
+
+.result-item:last-child {
+  margin-bottom: 0;
+}
+
+.stops-list h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+  color: #333;
+}
+
+#trip-details {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.stop-item {
+  border-left: 3px solid #1e88e5;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 0 4px 4px 0;
+}
+
+.charging-stop {
+  border-left-color: #ff9800;
+}
+
+.rest-stop {
+  border-left-color: #4caf50;
+}
+
+.stop-name {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.stop-details {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+/* Map */
+#map {
+  flex: 1;
+  height: 100%;
+  background-color: #e5e3df;
+}
+
+/* Vehicle icon for the route */
+.vehicle-icon {
+  background-color: #1e88e5;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* Charging station marker */
+.charging-marker {
+  background-color: #ff9800;
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+}
+
+/* Rest stop marker */
+.rest-marker {
+  background-color: #4caf50;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* City marker */
+.city-marker {
+  background-color: #9c27b0;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* Footer */
+footer {
+  background-color: #1e88e5;
+  color: white;
+  text-align: center;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    max-height: 50vh;
+  }
+  
+  #map {
+    height: 50vh;
+  }
+} 

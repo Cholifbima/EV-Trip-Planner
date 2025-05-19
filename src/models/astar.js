@@ -351,13 +351,21 @@ class AStar {
           }
         }
         
+        // Initialize tentative gScore
+        let tentativeGScore = gScore[current] + neighbor.distance;
+        
         // If we don't have enough battery to reach this neighbor
         if (remainingBattery <= 0) {
           // Check if current node has a charging station
           if (currentNodeHasChargingStation) {
             // We can charge here
             const station = this.nodeToChargingStation[current][0]; // Use the first charging station
-            const compatibleConnector = station.connectorTypes.includes(this.vehicle.connectorType);
+            
+            // Check if any of the station's connector types is compatible with the vehicle
+            const compatibleConnector = station.connectorTypes && 
+                station.connectorTypes.some(connectorType => 
+                    this.vehicle.connectorType === connectorType
+                );
             
             if (!compatibleConnector) {
               continue; // Incompatible charging connector, can't use this path
@@ -415,11 +423,8 @@ class AStar {
           tentativeGScore = gScore[current] + (neighbor.distance * 0.95);
         }
         
-        // Calculate tentative gScore
-        let tentativeGScore = gScore[current] + neighbor.distance;
-        
         // Slightly favor routes with charging stations (discount their cost a bit)
-        if (currentNodeHasChargingStation) {
+        if (currentNodeHasChargingStation && remainingBattery >= (this.vehicle.batteryCapacity * 0.2)) {
           // Apply a small discount (5%) to paths that include charging stations
           tentativeGScore = gScore[current] + (neighbor.distance * 0.95);
         }

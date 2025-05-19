@@ -275,6 +275,33 @@ router.post('/route', (req, res) => {
       });
     }
     
+    // Check for known disconnected routes between islands
+    const disconnectedRoutes = [
+      { start: "jakarta", end: "makassar" },
+      { start: "bandung", end: "makassar" },
+      { start: "semarang", end: "makassar" },
+      { start: "yogyakarta", end: "makassar" },
+      { start: "solo", end: "makassar" },
+      { start: "surabaya", end: "makassar" },
+      { start: "malang", end: "makassar" },
+      { start: "jakarta", end: "medan" },
+      { start: "bandung", end: "medan" },
+      { start: "surabaya", end: "medan" }
+    ];
+    
+    // Check both directions
+    const isDisconnected = disconnectedRoutes.some(route => 
+      (route.start === startCity && route.end === endCity) || 
+      (route.start === endCity && route.end === startCity)
+    );
+    
+    if (isDisconnected) {
+      return res.status(404).json({
+        success: false,
+        error: "Rute antar pulau ini tidak tersedia. Aplikasi saat ini hanya mendukung rute dalam pulau yang sama atau melalui jalur feri yang terhubung di dataset."
+      });
+    }
+    
     // Initialize A* algorithm
     const astar = new AStar(roadNetwork, chargingStations, vehicle);
     
@@ -282,7 +309,10 @@ router.post('/route', (req, res) => {
     const result = astar.findPath(startCity, endCity);
     
     if (!result.success) {
-      return res.status(404).json(result);
+      return res.status(404).json({
+        success: false,
+        error: result.error || "Tidak dapat menemukan rute yang sesuai. Kemungkinan tidak ada jalur yang terhubung atau SPKLU yang cukup di sepanjang rute."
+      });
     }
     
     // Get complete path with coordinates

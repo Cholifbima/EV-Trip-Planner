@@ -680,6 +680,123 @@ router.post('/route-custom', (req, res) => {
   }
 });
 
+// This endpoint is for debugging the A* algorithm
+router.post('/debug-route', (req, res) => {
+  try {
+    const { vehicleId, startCity, endCity, maxDetourDistance } = req.body;
+    
+    // Validate inputs
+    if (!vehicleId || !startCity || !endCity) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Missing required parameters: vehicleId, startCity, or endCity" 
+      });
+    }
+    
+    // Find vehicle
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    if (!vehicle) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Vehicle with ID ${vehicleId} not found` 
+      });
+    }
+    
+    // Initialize A* algorithm with debug mode enabled
+    const astar = new AStar(roadNetwork, chargingStations, vehicle);
+    astar.debug = true; // Enable debug mode
+    
+    // If custom maxDetourDistance was provided, use it
+    if (maxDetourDistance) {
+      astar.maxDetourDistance = maxDetourDistance;
+    }
+    
+    // First find the shortest path
+    const shortestPathResult = astar.findShortestPath(startCity, endCity);
+    
+    if (!shortestPathResult.success) {
+      return res.status(404).json({
+        success: false,
+        error: shortestPathResult.error || "No path found between these cities"
+      });
+    }
+    
+    // Then find charging stations and check feasibility
+    const pathWithChargingResult = astar.findPathWithChargingStations(
+      shortestPathResult.path,
+      shortestPathResult.edges
+    );
+    
+    // Get node details for the path
+    const pathWithDetails = shortestPathResult.path.map(nodeId => {
+      const node = roadNetwork.nodes.find(n => n.id === nodeId);
+      return {
+        id: nodeId,
+        name: node.name,
+        location: node.location
+      };
+    });
+    
+    // Collect all charging stations within the detour distance
+    const nearbyStations = astar.findNearbyChargingStations(
+      shortestPathResult.path, 
+      astar.maxDetourDistance
+    );
+    
+    // Convert Map to an array for JSON response
+    const nearbyStationsArray = [];
+    nearbyStations.forEach((stations, nodeId) => {
+      const node = roadNetwork.nodes.find(n => n.id === nodeId);
+      nearbyStationsArray.push({
+        nodeId,
+        nodeName: node.name,
+        location: node.location,
+        stations: stations
+      });
+    });
+    
+    // Format response with detailed debugging info
+    const response = {
+      success: true,
+      debug: true,
+      shortestPath: {
+        success: shortestPathResult.success,
+        path: pathWithDetails,
+        totalDistance: shortestPathResult.totalDistance,
+        nodeCount: shortestPathResult.path.length
+      },
+      pathWithCharging: {
+        success: pathWithChargingResult.success,
+        totalDistance: pathWithChargingResult.totalDistance || 0,
+        chargingStops: pathWithChargingResult.chargingStops || [],
+        error: pathWithChargingResult.error || null,
+        log: pathWithChargingResult.log || []
+      },
+      nearbyStations: nearbyStationsArray,
+      vehicle: {
+        id: vehicle.id,
+        name: vehicle.name,
+        range: vehicle.range,
+        batteryCapacity: vehicle.batteryCapacity,
+        efficiency: vehicle.efficiency
+      },
+      config: {
+        maxDetourDistance: astar.maxDetourDistance
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Debug route calculation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Server error in debug route calculation",
+      details: error.message,
+      stack: error.stack
+    });
+  }
+});
+
 // Helper function to find the nearest node to the given location
 function findNearestNode(location, nodes) {
   let nearestNode = null;

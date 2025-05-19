@@ -234,6 +234,41 @@ class ApiClient {
     if (!photoReference) return null;
     return `${this.baseUrl}/spklu-photo/${photoReference}?maxwidth=${maxWidth}`;
   }
+
+  /**
+   * Debug a route calculation to help diagnose issues
+   * @param {string} vehicleId - The ID of the selected vehicle
+   * @param {string} startCity - The ID of the start city
+   * @param {string} endCity - The ID of the destination city
+   * @param {number} maxDetourDistance - Optional custom maximum detour distance
+   * @returns {Promise<Object>} - Detailed debugging information
+   */
+  async debugRoute(vehicleId, startCity, endCity, maxDetourDistance) {
+    try {
+      const response = await fetch(`${this.baseUrl}/debug-route`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          vehicleId,
+          startCity,
+          endCity,
+          maxDetourDistance
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to debug route');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error debugging route:', error);
+      throw error;
+    }
+  }
 }
 
 // Create a global instance of the API client

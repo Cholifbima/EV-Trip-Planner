@@ -5,6 +5,7 @@
  * - Battery consumption based on distance
  * - Charging stations availability
  * - Vehicle range limitations
+ * - Preference for optimal routes with minimal detours
  */
 
 class AStar {
@@ -25,6 +26,12 @@ class AStar {
 
     // Map charging stations to nearest nodes
     this.nodeToChargingStation = this.mapChargingStationsToNodes();
+    
+    // Default max detour distance for finding nearby charging stations (in km)
+    this.maxDetourDistance = 5;
+    
+    // Debug mode
+    this.debug = false;
   }
 
   /**
@@ -88,7 +95,10 @@ class AStar {
         if (!nodeToChargingStation[nearestNode]) {
           nodeToChargingStation[nearestNode] = [];
         }
-        nodeToChargingStation[nearestNode].push(station);
+        nodeToChargingStation[nearestNode].push({
+          ...station,
+          distanceToNode: minDistance
+        });
       }
     });
     
@@ -168,12 +178,12 @@ class AStar {
   }
 
   /**
-   * Run A* search algorithm to find optimal path
+   * Find the shortest path without considering battery constraints
    * @param {string} start - Start node ID
    * @param {string} goal - Goal node ID
-   * @returns {Object} - Path, charging stops, and other trip details
+   * @returns {Object} - Path and total distance
    */
-  findPath(start, goal) {
+  findShortestPath(start, goal) {
     // Check if start and goal exist
     if (!this.nodes.find(n => n.id === start) || !this.nodes.find(n => n.id === goal)) {
       return { 
@@ -205,21 +215,8 @@ class AStar {
     // cameFrom[n] is the node immediately preceding n on the cheapest path
     const cameFrom = {};
     
-    // Initial battery level (100%)
-    const batteryLevel = {};
-    this.nodes.forEach(node => {
-      batteryLevel[node.id] = 0;
-    });
-    batteryLevel[start] = this.vehicle.batteryCapacity;
-    
-    // Charging stops and times
-    const chargingStops = [];
-    
-    // Track all potential charging stations passed
-    const potentialChargingStations = [];
-    
-    // Track nearest charging stations to the route
-    const nearbyChargingStations = new Map();
+    // For tracking edge data between nodes
+    const edgeBetween = {};
     
     while (openSet.size > 0) {
       // Find node with lowest fScore in openSet
@@ -235,89 +232,15 @@ class AStar {
       
       // If we reached the goal
       if (current === goal) {
-        // Add nearby charging stations that weren't used for charging but are along the route
-        const path = this.reconstructPath(cameFrom, current);
-        const visitedNodes = new Set(path);
-        
-        // Find all nearby charging stations along the final path
-        const additionalChargingStops = [];
-        path.forEach(nodeId => {
-          if (this.nodeToChargingStation[nodeId] && 
-              !chargingStops.some(stop => stop.nodeId === nodeId)) {
-            // This node has charging stations but wasn't used for charging
-            const station = this.nodeToChargingStation[nodeId][0];
-            
-            // Add as a potential charging stop with zero charging time
-            additionalChargingStops.push({
-              nodeId: nodeId,
-              stationId: station.id,
-              stationName: station.name,
-              chargingTime: 0, // No need to charge, just showing it's available
-              energyAdded: 0,
-              isOptional: true, // Mark as optional
-              location: {
-                lat: station.location.lat,
-                lng: station.location.lng
-              }
-            });
-          }
-        });
-        
-        // Add any nearby charging stations that are close to our route
-        nearbyChargingStations.forEach((stations, nodeId) => {
-          if (visitedNodes.has(nodeId)) {
-            stations.forEach(station => {
-              if (!chargingStops.some(stop => stop.stationId === station.id) &&
-                  !additionalChargingStops.some(stop => stop.stationId === station.id)) {
-                additionalChargingStops.push({
-                  nodeId: nodeId,
-                  stationId: station.id,
-                  stationName: station.name,
-                  chargingTime: 0,
-                  energyAdded: 0,
-                  isOptional: true,
-                  location: {
-                    lat: station.location.lat,
-                    lng: station.location.lng
-                  }
-                });
-              }
-            });
-          }
-        });
-        
-        // Sort additional stops by their position in the path
-        additionalChargingStops.sort((a, b) => {
-          return path.indexOf(a.nodeId) - path.indexOf(b.nodeId);
-        });
-        
-        // Combine necessary and optional charging stops
-        const allChargingStops = [...chargingStops, ...additionalChargingStops];
-        
-        // Also calculate coordinates for each charging stop
-        const stopsWithCoordinates = allChargingStops.map(stop => {
-          // Find the node for this stop
-          const node = this.nodes.find(n => n.id === stop.nodeId);
-          
-          // Find the station
-          let station = null;
-          if (this.nodeToChargingStation[stop.nodeId]) {
-            station = this.nodeToChargingStation[stop.nodeId].find(s => s.id === stop.stationId);
-          }
-          
-          return {
-            ...stop,
-            location: station ? station.location : node.location
-          };
-        });
-        
         // Reconstruct the path and return
+        const path = this.reconstructPath(cameFrom, current);
+        const edges = this.getEdgesForPath(path, edgeBetween);
+        
         return {
           success: true,
           path: path,
-          chargingStops: stopsWithCoordinates,
-          totalDistance: gScore[goal],
-          estimatedTime: this.calculateTripTime(gScore[goal], chargingStops)
+          edges: edges,
+          totalDistance: gScore[goal]
         };
       }
       
@@ -334,100 +257,19 @@ class AStar {
           continue;
         }
         
-        // Calculate energy needed for this segment
-        const energyNeeded = this.calculateEnergyConsumption(neighbor.distance);
-        
-        // Calculate remaining battery after movement
-        const remainingBattery = batteryLevel[current] - energyNeeded;
-        
-        // Check if current node has a charging station for possible route adjustments
-        let currentNodeHasChargingStation = false;
-        if (this.nodeToChargingStation[current]) {
-          currentNodeHasChargingStation = true;
-          
-          // Store as a nearby charging station
-          if (!nearbyChargingStations.has(current)) {
-            nearbyChargingStations.set(current, this.nodeToChargingStation[current]);
-          }
+        // Slightly prefer highways and toll roads
+        let edgeWeight = neighbor.distance;
+        if (neighbor.type === 'highway' || neighbor.type === 'toll_road') {
+          edgeWeight *= 0.95; // 5% bonus for highways/toll roads
         }
         
-        // Initialize tentative gScore
-        let tentativeGScore = gScore[current] + neighbor.distance;
-        
-        // If we don't have enough battery to reach this neighbor
-        if (remainingBattery <= 0) {
-          // Check if current node has a charging station
-          if (currentNodeHasChargingStation) {
-            // We can charge here
-            const station = this.nodeToChargingStation[current][0]; // Use the first charging station
-            
-            // Check if any of the station's connector types is compatible with the vehicle
-            const compatibleConnector = station.connectorTypes && 
-                station.connectorTypes.some(connectorType => 
-                    this.vehicle.connectorType === connectorType
-                );
-            
-            if (!compatibleConnector) {
-              continue; // Incompatible charging connector, can't use this path
-            }
-            
-            // Calculate energy needed to fully charge
-            const energyToCharge = this.vehicle.batteryCapacity - batteryLevel[current];
-            const chargingTime = this.calculateChargingTime(energyToCharge, station.chargingSpeed);
-            
-            // Add charging stop
-            const chargingStopExists = chargingStops.some(stop => stop.nodeId === current);
-            if (!chargingStopExists) {
-              chargingStops.push({
-                nodeId: current,
-                stationId: station.id,
-                stationName: station.name,
-                location: station.location,
-                chargingTime,
-                energyAdded: energyToCharge
-              });
-            }
-            
-            // Now we have a full battery
-            batteryLevel[current] = this.vehicle.batteryCapacity;
-          } else {
-            continue; // No charging station and not enough battery, can't use this path
-          }
-        } 
-        // Battery level is getting low (less than 20%), prefer to charge if available
-        else if (remainingBattery < (this.vehicle.batteryCapacity * 0.2) && currentNodeHasChargingStation) {
-          // There's a charging station here, so let's charge even though we don't absolutely need to
-          const station = this.nodeToChargingStation[current][0];
-          const energyToCharge = this.vehicle.batteryCapacity - batteryLevel[current];
-          const chargingTime = this.calculateChargingTime(energyToCharge, station.chargingSpeed);
-          
-          // Add charging stop if we haven't already added it
-          const chargingStopExists = chargingStops.some(stop => stop.nodeId === current);
-          if (!chargingStopExists) {
-            chargingStops.push({
-              nodeId: current,
-              stationId: station.id,
-              stationName: station.name,
-              location: station.location,
-              chargingTime,
-              energyAdded: energyToCharge
-            });
-          }
-          
-          // Now we have a full battery
-          batteryLevel[current] = this.vehicle.batteryCapacity;
-          
-          // Slightly favor routes that stop at charging stations
-          // This gives a small bonus to paths that include charging stations along the way
-          // The 0.95 factor means paths with charging stations will be preferred if they're within 5% of the shortest path
-          tentativeGScore = gScore[current] + (neighbor.distance * 0.95);
+        // Penalize roads in poor condition
+        if (neighbor.condition === 'poor') {
+          edgeWeight *= 1.2; // 20% penalty for poor roads
         }
         
-        // Slightly favor routes with charging stations (discount their cost a bit)
-        if (currentNodeHasChargingStation && remainingBattery >= (this.vehicle.batteryCapacity * 0.2)) {
-          // Apply a small discount (5%) to paths that include charging stations
-          tentativeGScore = gScore[current] + (neighbor.distance * 0.95);
-        }
+        // Calculate tentative gScore
+        const tentativeGScore = gScore[current] + edgeWeight;
         
         // Add neighbor to openSet if not there
         if (!openSet.has(neighborId)) {
@@ -439,17 +281,454 @@ class AStar {
         
         // This path is the best until now. Record it!
         cameFrom[neighborId] = current;
+        edgeBetween[`${current}-${neighborId}`] = neighbor;
         gScore[neighborId] = tentativeGScore;
         fScore[neighborId] = gScore[neighborId] + this.heuristic(neighborId, goal);
-        batteryLevel[neighborId] = remainingBattery;
       }
     }
     
     // If we get here, no path was found
     return {
       success: false,
-      error: "No path found with the given constraints"
+      error: "No path found between the given nodes"
     };
+  }
+
+  /**
+   * Get all edges for a path
+   * @param {Array} path - Array of node IDs
+   * @param {Object} edgeBetween - Map of node pairs to edge data
+   * @returns {Array} - Array of edge objects
+   */
+  getEdgesForPath(path, edgeBetween) {
+    const edges = [];
+    
+    for (let i = 0; i < path.length - 1; i++) {
+      const from = path[i];
+      const to = path[i + 1];
+      
+      // Try both directions for the edge
+      const edge = edgeBetween[`${from}-${to}`] || edgeBetween[`${to}-${from}`];
+      
+      if (edge) {
+        edges.push({
+          from,
+          to,
+          ...edge
+        });
+      } else {
+        // Fallback to finding the edge in the original edges list
+        const originalEdge = this.edges.find(e => 
+          (e.from === from && e.to === to) || 
+          (e.from === to && e.to === from)
+        );
+        
+        if (originalEdge) {
+          edges.push(originalEdge);
+        }
+      }
+    }
+    
+    return edges;
+  }
+
+  /**
+   * Find charging stations near a given path within a maximum detour distance
+   * @param {Array} path - Array of node IDs representing the path
+   * @param {number} maxDetourDistance - Maximum detour distance in km to consider a charging station "nearby"
+   * @returns {Map} - Map of node ID to nearby charging stations
+   */
+  findNearbyChargingStations(path, maxDetourDistance) {
+    const nearbyStations = new Map();
+    
+    // Create a set of nodes in the path for faster lookups
+    const nodesInPath = new Set(path);
+    
+    // First, add stations that are directly on the path
+    path.forEach(nodeId => {
+      if (this.nodeToChargingStation[nodeId]) {
+        nearbyStations.set(nodeId, this.nodeToChargingStation[nodeId]);
+      }
+    });
+    
+    // Then add stations that are near the path (within maxDetourDistance)
+    Object.keys(this.nodeToChargingStation).forEach(nodeId => {
+      // Skip nodes already in the path
+      if (nodesInPath.has(nodeId)) return;
+      
+      const stationsAtNode = this.nodeToChargingStation[nodeId];
+      
+      // Find the closest node in the path to this station
+      const nodeObj = this.nodes.find(n => n.id === nodeId);
+      if (!nodeObj) return;
+      
+      let minDistanceToPath = Infinity;
+      let closestPathNode = null;
+      
+      for (const pathNodeId of path) {
+        const pathNode = this.nodes.find(n => n.id === pathNodeId);
+        if (!pathNode) continue;
+        
+        const distance = this.calculateDistance(
+          nodeObj.location.lat, nodeObj.location.lng,
+          pathNode.location.lat, pathNode.location.lng
+        );
+        
+        if (distance < minDistanceToPath) {
+          minDistanceToPath = distance;
+          closestPathNode = pathNodeId;
+        }
+      }
+      
+      // If the station is within the max detour distance, add it to the nearbyStations
+      if (minDistanceToPath <= maxDetourDistance) {
+        // If this node's closest path node already has stations, append to the array
+        if (nearbyStations.has(closestPathNode)) {
+          // Create a new array with existing stations plus these
+          const existingStations = nearbyStations.get(closestPathNode);
+          const extendedStations = [...existingStations];
+          
+          // Add stations from this node
+          stationsAtNode.forEach(station => {
+            // Add the distance to the path
+            station.distanceToPath = minDistanceToPath;
+            extendedStations.push(station);
+          });
+          
+          nearbyStations.set(closestPathNode, extendedStations);
+        } else {
+          // Add the distance to the path for each station
+          const stationsWithDistance = stationsAtNode.map(station => ({
+            ...station,
+            distanceToPath: minDistanceToPath
+          }));
+          
+          // Attach these stations to the closest path node
+          nearbyStations.set(closestPathNode, stationsWithDistance);
+        }
+      }
+    });
+    
+    return nearbyStations;
+  }
+
+  /**
+   * Check if a path is feasible with the given vehicle's battery capacity
+   * @param {Array} path - Array of node IDs
+   * @param {Array} edges - Array of edge objects
+   * @param {Map} chargingStations - Map of node ID to charging stations
+   * @returns {Object} - Feasibility result with charging plan if feasible
+   */
+  checkPathFeasibility(path, edges, chargingStations) {
+    const batteryCapacity = this.vehicle.batteryCapacity;
+    const range = this.vehicle.range;
+    
+    // Initialize battery level (100% at start)
+    let battery = batteryCapacity;
+    
+    // Keep track of distance traveled
+    let distanceTraveled = 0;
+    
+    // Keep track of charging stops
+    const chargingStops = [];
+    
+    // Log for debugging
+    const log = [];
+    if (this.debug) log.push(`Starting with full battery: ${battery.toFixed(2)} kWh (range: ${range} km)`);
+    
+    // Simulate traveling along the path
+    for (let i = 0; i < path.length - 1; i++) {
+      const fromNodeId = path[i];
+      const toNodeId = path[i + 1];
+      
+      // Find the edge between these nodes
+      const edge = edges.find(e => 
+        (e.from === fromNodeId && e.to === toNodeId) || 
+        (e.from === toNodeId && e.to === fromNodeId)
+      );
+      
+      if (!edge) {
+        if (this.debug) log.push(`Error: No edge found between ${fromNodeId} and ${toNodeId}`);
+        return {
+          feasible: false,
+          error: `No edge found between ${fromNodeId} and ${toNodeId}`,
+          log
+        };
+      }
+      
+      // Calculate energy needed for this segment
+      const distance = edge.distance;
+      const energyNeeded = this.calculateEnergyConsumption(distance);
+      
+      if (this.debug) {
+        log.push(`Segment ${fromNodeId} to ${toNodeId}: ${distance.toFixed(1)} km, requires ${energyNeeded.toFixed(2)} kWh`);
+        log.push(`Current battery: ${battery.toFixed(2)} kWh`);
+      }
+      
+      // Check if we need to charge at the current node before proceeding
+      if (energyNeeded > battery) {
+        // We need to charge - check if there's a charging station at this node
+        if (chargingStations.has(fromNodeId)) {
+          const stations = chargingStations.get(fromNodeId);
+          
+          // Use the first station at this node
+          const station = stations[0];
+          
+          // Check if any of the station's connector types is compatible with the vehicle
+          const compatibleConnector = station.connectorTypes && 
+            station.connectorTypes.some(connectorType => 
+              this.vehicle.connectorType === connectorType
+            );
+          
+          if (!compatibleConnector) {
+            if (this.debug) log.push(`Error: No compatible charging connector at ${fromNodeId}`);
+            return {
+              feasible: false,
+              error: `No compatible charging connector at ${fromNodeId}`,
+              log
+            };
+          }
+          
+          // Calculate energy needed to fully charge
+          const energyToCharge = batteryCapacity - battery;
+          const chargingTime = this.calculateChargingTime(energyToCharge, station.chargingSpeed);
+          
+          // Add the charging stop
+          chargingStops.push({
+            nodeId: fromNodeId,
+            stationId: station.id,
+            stationName: station.name,
+            location: station.location,
+            chargingTime,
+            energyAdded: energyToCharge
+          });
+          
+          // Update battery level
+          battery = batteryCapacity;
+          
+          if (this.debug) {
+            log.push(`Charging at ${fromNodeId} (${station.name}): +${energyToCharge.toFixed(2)} kWh, ${(chargingTime * 60).toFixed(0)} min`);
+            log.push(`Battery after charging: ${battery.toFixed(2)} kWh`);
+          }
+        } else {
+          // No charging station - we can't complete this segment
+          if (this.debug) log.push(`Error: No charging station at ${fromNodeId} and not enough battery to reach ${toNodeId}`);
+          return {
+            feasible: false,
+            error: `No charging station at ${fromNodeId} and not enough battery to reach ${toNodeId}`,
+            log
+          };
+        }
+      }
+      
+      // Now we definitely have enough battery to complete this segment
+      battery -= energyNeeded;
+      distanceTraveled += distance;
+      
+      if (this.debug) log.push(`After segment: Battery: ${battery.toFixed(2)} kWh, Distance traveled: ${distanceTraveled.toFixed(1)} km`);
+      
+      // Check if we should charge at the next node
+      // We'll charge if battery is below 20% and there's a charging station
+      const nextNodeId = path[i + 1];
+      const batteryPercentage = (battery / batteryCapacity) * 100;
+      
+      if (batteryPercentage < 20 && i < path.length - 2 && chargingStations.has(nextNodeId)) {
+        const stations = chargingStations.get(nextNodeId);
+        const station = stations[0];
+        
+        // Check connector compatibility
+        const compatibleConnector = station.connectorTypes && 
+          station.connectorTypes.some(connectorType => 
+            this.vehicle.connectorType === connectorType
+          );
+        
+        if (compatibleConnector) {
+          // Calculate energy needed to fully charge
+          const energyToCharge = batteryCapacity - battery;
+          const chargingTime = this.calculateChargingTime(energyToCharge, station.chargingSpeed);
+          
+          // Add the charging stop
+          chargingStops.push({
+            nodeId: nextNodeId,
+            stationId: station.id,
+            stationName: station.name,
+            location: station.location,
+            chargingTime,
+            energyAdded: energyToCharge
+          });
+          
+          // Update battery level for next segment
+          battery = batteryCapacity;
+          
+          if (this.debug) {
+            log.push(`Low battery (${batteryPercentage.toFixed(1)}%), charging at ${nextNodeId} (${station.name})`);
+            log.push(`Added ${energyToCharge.toFixed(2)} kWh, charging time: ${(chargingTime * 60).toFixed(0)} min`);
+            log.push(`Battery after charging: ${battery.toFixed(2)} kWh`);
+          }
+        }
+      }
+    }
+    
+    // If we made it through the whole path, it's feasible
+    return {
+      feasible: true,
+      chargingStops,
+      finalBatteryLevel: battery,
+      log
+    };
+  }
+
+  /**
+   * Find optimal path with charging stops
+   * @param {Array} optimalPath - The optimal path ignoring battery constraints
+   * @param {Array} edges - The edges of the optimal path
+   * @returns {Object} - Path with charging stops
+   */
+  findPathWithChargingStations(optimalPath, edges) {
+    // Find nearby charging stations
+    const nearbyStations = this.findNearbyChargingStations(optimalPath, this.maxDetourDistance);
+    
+    // First try with nearby stations
+    const feasibilityResult = this.checkPathFeasibility(optimalPath, edges, nearbyStations);
+    
+    if (feasibilityResult.feasible) {
+      // The path is feasible with nearby charging stations
+      return {
+        success: true,
+        path: optimalPath,
+        edges: edges,
+        chargingStops: feasibilityResult.chargingStops,
+        totalDistance: edges.reduce((sum, edge) => sum + edge.distance, 0),
+        log: feasibilityResult.log
+      };
+    }
+    
+    // If not feasible with nearby stations, try with more distant stations
+    if (this.debug) {
+      console.log(`Path not feasible with ${this.maxDetourDistance}km detour, trying with 10km...`);
+    }
+    
+    const widerNearbyStations = this.findNearbyChargingStations(optimalPath, 10);
+    const widerFeasibilityResult = this.checkPathFeasibility(optimalPath, edges, widerNearbyStations);
+    
+    if (widerFeasibilityResult.feasible) {
+      // The path is feasible with wider nearby charging stations
+      return {
+        success: true,
+        path: optimalPath,
+        edges: edges,
+        chargingStops: widerFeasibilityResult.chargingStops,
+        totalDistance: edges.reduce((sum, edge) => sum + edge.distance, 0),
+        log: widerFeasibilityResult.log,
+        warning: "Had to use charging stations farther from the main route"
+      };
+    }
+    
+    // If we still can't make a feasible path, return the error
+    return {
+      success: false,
+      error: widerFeasibilityResult.error || "Could not find a feasible path with charging stations",
+      log: widerFeasibilityResult.log
+    };
+  }
+
+  /**
+   * Run A* search algorithm to find optimal path
+   * @param {string} start - Start node ID
+   * @param {string} goal - Goal node ID
+   * @returns {Object} - Path, charging stops, and other trip details
+   */
+  findPath(start, goal) {
+    try {
+      // First, find the shortest path without considering battery constraints
+      const shortestPathResult = this.findShortestPath(start, goal);
+      
+      if (!shortestPathResult.success) {
+        return {
+          success: false,
+          error: shortestPathResult.error || "Could not find a path between the given locations"
+        };
+      }
+      
+      // Next, find charging stations near this path and create a feasible route
+      const pathWithChargingResult = this.findPathWithChargingStations(
+        shortestPathResult.path,
+        shortestPathResult.edges
+      );
+      
+      if (!pathWithChargingResult.success) {
+        // Return partial information if we at least found an optimal path
+        return {
+          success: false,
+          error: pathWithChargingResult.error,
+          partialPath: shortestPathResult.path,
+          totalDistance: shortestPathResult.totalDistance,
+          log: pathWithChargingResult.log
+        };
+      }
+      
+      // If successful, calculate estimated time
+      const totalDistance = pathWithChargingResult.totalDistance;
+      const estimatedTime = this.calculateTripTime(
+        totalDistance,
+        pathWithChargingResult.chargingStops
+      );
+      
+      // Find optional charging stations along the route
+      const path = pathWithChargingResult.path;
+      const chargingStops = pathWithChargingResult.chargingStops;
+      const visitedNodes = new Set(path);
+      
+      // Find all nearby charging stations along the final path that weren't used
+      const additionalChargingStops = [];
+      const nearbyStations = this.findNearbyChargingStations(path, this.maxDetourDistance);
+      
+      nearbyStations.forEach((stations, nodeId) => {
+        // Skip if this node already has a charging stop
+        if (chargingStops.some(stop => stop.nodeId === nodeId)) return;
+        
+        // Only include stations along the path (within visitedNodes)
+        if (visitedNodes.has(nodeId)) {
+          // Take the first station at this node
+          const station = stations[0];
+          
+          additionalChargingStops.push({
+            nodeId: nodeId,
+            stationId: station.id,
+            stationName: station.name,
+            chargingTime: 0, // No need to charge, just showing it's available
+            energyAdded: 0,
+            isOptional: true,
+            location: station.location,
+            distanceToPath: station.distanceToPath || 0
+          });
+        }
+      });
+      
+      // Sort additional stops by their position in the path
+      additionalChargingStops.sort((a, b) => {
+        return path.indexOf(a.nodeId) - path.indexOf(b.nodeId);
+      });
+      
+      // Combine necessary and optional charging stops
+      const allChargingStops = [...chargingStops, ...additionalChargingStops];
+      
+      return {
+        success: true,
+        path: path,
+        chargingStops: allChargingStops,
+        totalDistance: totalDistance,
+        estimatedTime: estimatedTime,
+        log: pathWithChargingResult.log,
+        warning: pathWithChargingResult.warning
+      };
+    } catch (error) {
+      console.error("Error in findPath:", error);
+      return {
+        success: false,
+        error: "An unexpected error occurred: " + error.message
+      };
+    }
   }
 
   /**
@@ -481,7 +760,13 @@ class AStar {
     const drivingTime = distance / averageSpeed;
     
     // Add up all charging times
-    const chargingTime = chargingStops.reduce((total, stop) => total + stop.chargingTime, 0);
+    const chargingTime = chargingStops.reduce((total, stop) => {
+      // Only count non-optional stops
+      if (!stop.isOptional) {
+        return total + stop.chargingTime;
+      }
+      return total;
+    }, 0);
     
     // Add rest time - assume 15 min rest every 2 hours of driving
     const restTime = Math.floor(drivingTime / 2) * 0.25;

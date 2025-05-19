@@ -20,6 +20,12 @@ document.addEventListener('DOMContentLoaded', function() {
   const customStartCoordsEl = document.getElementById('custom-start-coords');
   const customDestCoordsEl = document.getElementById('custom-dest-coords');
   
+  // Debug mode elements (new)
+  const debugModeCheckbox = document.querySelector('#debug-mode');
+  let debugMode = false;
+  let maxDetourDistanceInput = document.querySelector('#max-detour-distance');
+  const debugInfoContainer = document.getElementById('debug-info') || createDebugInfoContainer();
+  
   // SPKLU Elements
   const showAllSpkluBtn = document.getElementById('show-all-spklu-btn');
   const hideAllSpkluBtn = document.getElementById('hide-all-spklu-btn');
@@ -49,6 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
   showAllSpkluBtn.addEventListener('click', showAllSPKLU);
   hideAllSpkluBtn.addEventListener('click', hideAllSPKLU);
   startIndexingBtn.addEventListener('click', startIndexingSPKLU);
+  debugModeCheckbox.addEventListener('change', toggleDebugMode);
   
   // Custom location listeners
   customLocationsToggle.addEventListener('change', toggleCustomLocationMode);
@@ -132,6 +139,22 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   /**
+   * Toggle debug mode
+   */
+  function toggleDebugMode() {
+    debugMode = debugModeCheckbox.checked;
+    const debugOptions = document.getElementById('debug-options');
+    
+    if (debugMode) {
+      debugOptions.style.display = 'flex';
+      debugInfoContainer.style.display = 'block';
+    } else {
+      debugOptions.style.display = 'none';
+      debugInfoContainer.style.display = 'none';
+    }
+  }
+
+  /**
    * Plan a trip with selected parameters
    * @param {boolean} forceRoute - Force route creation even for nearby points
    */
@@ -146,6 +169,64 @@ document.addEventListener('DOMContentLoaded', function() {
       // Validate vehicle selection for all cases
       if (!vehicleId) {
         showErrorMessage('Please select a vehicle');
+        planTripBtn.disabled = false;
+        return;
+      }
+      
+      // Check if we're in debug mode
+      if (debugMode && !customMode) {
+        // For debug mode with city selection
+        const startCity = startSelect.value;
+        const endCity = destinationSelect.value;
+        
+        // Validate dropdown selections
+        if (!startCity || !endCity) {
+          showErrorMessage('Please select both start location and destination from the dropdown');
+          planTripBtn.disabled = false;
+          return;
+        }
+        
+        // Same start and end?
+        if (startCity === endCity) {
+          showErrorMessage('Start and destination cannot be the same');
+          planTripBtn.disabled = false;
+          return;
+        }
+        
+        // Get custom max detour distance if specified
+        const maxDetourDistance = maxDetourDistanceInput ? 
+          parseInt(maxDetourDistanceInput.value) : undefined;
+        
+        // Show loading state
+        setButtonLoading(true);
+        
+        // Call debug API
+        const debugData = await api.debugRoute(vehicleId, startCity, endCity, maxDetourDistance);
+        
+        // Display debug information
+        displayDebugInfo(debugData);
+        
+        // If the path was successful, also display it on the map
+        if (debugData.pathWithCharging && debugData.pathWithCharging.success) {
+          // Convert debug data to trip data format
+          const tripData = {
+            success: true,
+            route: {
+              path: debugData.shortestPath.path,
+              chargingStops: debugData.pathWithCharging.chargingStops,
+              restStops: [],
+              totalDistance: debugData.pathWithCharging.totalDistance,
+              estimatedTripTimeHours: 0, // Will be calculated by displayResults
+              estimatedTripTimeMinutes: 0
+            },
+            vehicle: debugData.vehicle
+          };
+          
+          // Display results as usual
+          displayResults(tripData);
+        }
+        
+        setButtonLoading(false);
         planTripBtn.disabled = false;
         return;
       }
@@ -667,6 +748,8 @@ document.addEventListener('DOMContentLoaded', function() {
   function toggleCustomLocationMode() {
     customMode = customLocationsToggle.checked;
     
+    console.log('Custom location mode:', customMode ? 'enabled' : 'disabled');
+    
     // Enable/disable dropdowns based on custom mode
     startSelect.disabled = customMode;
     destinationSelect.disabled = customMode;
@@ -676,8 +759,8 @@ document.addEventListener('DOMContentLoaded', function() {
     customDestBtn.disabled = !customMode;
     
     // Show/hide custom coordinate displays
-    customStartCoordsEl.style.display = customMode ? 'block' : 'none';
-    customDestCoordsEl.style.display = customMode ? 'block' : 'none';
+    customStartCoordsEl.style.display = (customMode && customStartLocation) ? 'block' : 'none';
+    customDestCoordsEl.style.display = (customMode && customDestLocation) ? 'block' : 'none';
     
     if (!customMode) {
       // Clear custom locations when switching back to predefined locations
@@ -686,6 +769,12 @@ document.addEventListener('DOMContentLoaded', function() {
       // Clear dropdown selections when switching to custom mode
       startSelect.selectedIndex = 0;
       destinationSelect.selectedIndex = 0;
+      
+      // Show a help message
+      mapHandler.showMapMessage('Click the location icons to select your start and destination points on the map');
+      setTimeout(() => {
+        mapHandler.hideMapMessage();
+      }, 5000);
     }
   }
   
@@ -700,34 +789,62 @@ document.addEventListener('DOMContentLoaded', function() {
   function selectCustomStart() {
     if (!customMode) return;
     
+    console.log('Selecting custom start location');
+    
     // Disable both buttons while selecting
     customStartBtn.disabled = true;
     customDestBtn.disabled = true;
     
+    // Set a message on the map
+    mapHandler.showMapMessage('Click on the map to select your start location');
+    
+    // Make sure map is visible to the user
+    document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+    
     mapHandler.enableLocationPicker('start', (position) => {
       customStartLocation = position;
       customStartCoordsEl.textContent = `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}`;
+      customStartCoordsEl.style.display = 'block';
+      
+      // Hide the message
+      mapHandler.hideMapMessage();
       
       // Re-enable buttons
       customStartBtn.disabled = false;
       customDestBtn.disabled = false;
+      
+      console.log('Custom start location set:', position);
     });
   }
   
   function selectCustomDestination() {
     if (!customMode) return;
     
+    console.log('Selecting custom destination location');
+    
     // Disable both buttons while selecting
     customStartBtn.disabled = true;
     customDestBtn.disabled = true;
     
+    // Set a message on the map
+    mapHandler.showMapMessage('Click on the map to select your destination');
+    
+    // Make sure map is visible to the user
+    document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+    
     mapHandler.enableLocationPicker('destination', (position) => {
       customDestLocation = position;
       customDestCoordsEl.textContent = `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}`;
+      customDestCoordsEl.style.display = 'block';
+      
+      // Hide the message
+      mapHandler.hideMapMessage();
       
       // Re-enable buttons
       customStartBtn.disabled = false;
       customDestBtn.disabled = false;
+      
+      console.log('Custom destination location set:', position);
     });
   }
   
@@ -765,5 +882,57 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(() => {
       warningContainer.style.display = 'none';
     }, 5000);
+  }
+
+  
+  
+  // Function to create debug info container if it doesn't exist
+  function createDebugInfoContainer() {
+    const container = document.createElement('div');
+    container.id = 'debug-info';
+    container.className = 'debug-info-container';
+    container.style.display = 'none';
+    container.style.margin = '20px 0';
+    container.style.padding = '10px';
+    container.style.backgroundColor = '#f8f9fa';
+    container.style.border = '1px solid #ddd';
+    container.style.borderRadius = '5px';
+    container.innerHTML = '<h4>Debug Information</h4><pre id="debug-json"></pre>';
+    
+    // Add to DOM after results section
+    const resultsSection = document.getElementById('results-section');
+    resultsSection.parentNode.insertBefore(container, resultsSection.nextSibling);
+    
+    return container;
+  }
+
+  /**
+   * Display debug information
+   * @param {Object} debugData - Debug data from API
+   */
+  function displayDebugInfo(debugData) {
+    const debugJsonPre = document.getElementById('debug-json');
+    
+    // Highlight the important parts
+    const highlightedData = {
+      shortestPath: {
+        path: debugData.shortestPath.path.map(node => node.name),
+        totalDistance: debugData.shortestPath.totalDistance
+      },
+      chargingPlan: debugData.pathWithCharging.chargingStops.map(stop => ({
+        location: stop.stationName,
+        energyAdded: stop.energyAdded,
+        chargingTimeMinutes: Math.round(stop.chargingTime * 60)
+      })),
+      nearbyStations: debugData.nearbyStations.length,
+      vehicle: {
+        range: debugData.vehicle.range,
+        batteryCapacity: debugData.vehicle.batteryCapacity
+      },
+      log: debugData.pathWithCharging.log
+    };
+    
+    debugJsonPre.textContent = JSON.stringify(highlightedData, null, 2);
+    debugInfoContainer.style.display = 'block';
   }
 });

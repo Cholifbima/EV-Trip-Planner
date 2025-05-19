@@ -25,46 +25,59 @@
       <div class="form-section">
         <h2>Trip Information</h2>
         
-        <div class="form-group">
-          <label for="vehicle-select">Select Vehicle</label>
-          <select id="vehicle-select">
-            <option value="">-- Select Vehicle --</option>
-            <!-- Options will be loaded by JavaScript -->
-          </select>
-        </div>
-        
-        <div class="form-group location-selector">
-          <label for="start-select">Start Location</label>
-          <div class="location-input-group">
-            <select id="start-select">
-              <option value="">-- Select Start --</option>
+        <div class="options-container">
+          <div class="form-group">
+            <label for="vehicle-select">Select Vehicle</label>
+            <select id="vehicle-select">
+              <option value="">-- Select Vehicle --</option>
               <!-- Options will be loaded by JavaScript -->
             </select>
-            <button id="custom-start-btn" class="location-picker-btn" type="button" title="Pick custom start location on map">
-              <span class="pin-icon">📍</span>
-            </button>
           </div>
-          <div id="custom-start-coords" class="custom-coords"></div>
-        </div>
-        
-        <div class="form-group location-selector">
-          <label for="destination-select">Destination</label>
-          <div class="location-input-group">
-            <select id="destination-select">
-              <option value="">-- Select Destination --</option>
-              <!-- Options will be loaded by JavaScript -->
-            </select>
-            <button id="custom-dest-btn" class="location-picker-btn" type="button" title="Pick custom destination on map">
-              <span class="pin-icon">📍</span>
-            </button>
+          
+          <div class="form-group location-selector">
+            <label for="start-select">Start Location</label>
+            <div class="location-input-group">
+              <select id="start-select">
+                <option value="">-- Select Start --</option>
+                <!-- Options will be loaded by JavaScript -->
+              </select>
+              <button id="custom-start-btn" class="location-picker-btn" type="button" title="Pick custom start location on map">
+                <span class="pin-icon">📍</span>
+              </button>
+            </div>
+            <div id="custom-start-coords" class="custom-coords"></div>
           </div>
-          <div id="custom-dest-coords" class="custom-coords"></div>
-        </div>
-        
-        <div class="form-group">
-          <div class="selection-mode-toggle">
-            <input type="checkbox" id="custom-locations-toggle">
-            <label for="custom-locations-toggle">Enable custom location selection</label>
+          
+          <div class="form-group location-selector">
+            <label for="destination-select">Destination</label>
+            <div class="location-input-group">
+              <select id="destination-select">
+                <option value="">-- Select Destination --</option>
+                <!-- Options will be loaded by JavaScript -->
+              </select>
+              <button id="custom-dest-btn" class="location-picker-btn" type="button" title="Pick custom destination on map">
+                <span class="pin-icon">📍</span>
+              </button>
+            </div>
+            <div id="custom-dest-coords" class="custom-coords"></div>
+          </div>
+          
+          <div class="form-group">
+            <div class="selection-mode-toggle">
+              <input type="checkbox" id="custom-locations-toggle">
+              <label for="custom-locations-toggle">Enable custom location selection</label>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <div class="selection-mode-toggle">
+              <input type="checkbox" id="debug-mode">
+              <label for="debug-mode">Debug Mode</label>
+            </div>
+            <div class="input-group mt-2" id="debug-options" style="display: none;">
+              <input type="number" class="form-control" id="max-detour-distance" min="1" max="20" value="5" style="width: 80px;">
+              <span class="input-group-text">km max detour</span>
+            </div>
           </div>
         </div>
         

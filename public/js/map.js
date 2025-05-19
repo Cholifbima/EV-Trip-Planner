@@ -594,16 +594,30 @@ class MapHandler {
    * @param {Function} callback - Called when a location is selected
    */
   enableLocationPicker(type, callback) {
+    console.log(`Map: Enabling location picker for ${type}`);
+    
+    // Make sure the map is initialized
+    if (!this.map) {
+      console.error('Map not initialized!');
+      return;
+    }
+    
     // Remove any existing click handlers
     this.map.off('click');
     
     // Show helper message
     this.showMapMessage(`Click on the map to select your ${type === 'start' ? 'starting point' : 'destination'}`);
     
+    // Highlight the map with a subtle animation to indicate it's in selection mode
+    const mapContainer = document.getElementById('map');
+    mapContainer.style.transition = 'box-shadow 0.3s ease';
+    mapContainer.style.boxShadow = type === 'start' ? '0 0 15px rgba(76, 175, 80, 0.7)' : '0 0 15px rgba(244, 67, 54, 0.7)';
+    
     // Add click handler to the map
     this.map.once('click', (e) => {
       // Get clicked coordinates
       const position = e.latlng;
+      console.log(`Map: Selected ${type} at position:`, position);
       
       // Create marker for the selected location
       this.setCustomLocation(type, position);
@@ -611,8 +625,14 @@ class MapHandler {
       // Hide the message
       this.hideMapMessage();
       
+      // Remove highlight
+      mapContainer.style.boxShadow = 'none';
+      
       // Call the callback function with the selected position
-      if (callback) callback(position);
+      if (callback) {
+        console.log(`Map: Calling ${type} callback with position`);
+        callback(position);
+      }
     });
   }
   
@@ -631,6 +651,9 @@ class MapHandler {
     // Set message and show
     this.messageContainer.textContent = message;
     this.messageContainer.style.display = 'block';
+    
+    // Add attention-grabbing animation
+    this.messageContainer.style.animation = 'pulse 2s infinite';
   }
   
   /**
@@ -639,6 +662,7 @@ class MapHandler {
   hideMapMessage() {
     if (this.messageContainer) {
       this.messageContainer.style.display = 'none';
+      this.messageContainer.style.animation = 'none';
     }
   }
   
@@ -648,10 +672,20 @@ class MapHandler {
    * @param {L.LatLng} position - The marker position
    */
   setCustomLocation(type, position) {
+    console.log(`Map: Setting custom ${type} location:`, position);
+    
+    // Make sure the map is initialized
+    if (!this.map) {
+      console.error('Map not initialized when setting custom location!');
+      return null;
+    }
+    
     // Remove existing marker if any
     if (type === 'start' && this.customStartMarker) {
+      console.log('Map: Removing existing start marker');
       this.map.removeLayer(this.customStartMarker);
     } else if (type === 'destination' && this.customDestMarker) {
+      console.log('Map: Removing existing destination marker');
       this.map.removeLayer(this.customDestMarker);
     }
     
@@ -663,36 +697,83 @@ class MapHandler {
       iconAnchor: [18, 18]
     });
     
-    // Create marker
-    const marker = L.marker(position, {
-      icon,
-      draggable: true
-    }).addTo(this.map);
-    
-    // Add popup with information
-    marker.bindPopup(type === 'start' ? 'Start Location' : 'Destination');
-    
-    // Add drag end event for position updates
-    marker.on('dragend', (e) => {
-      const newPos = e.target.getLatLng();
+    try {
+      // Create marker
+      const marker = L.marker(position, {
+        icon,
+        draggable: true
+      }).addTo(this.map);
       
-      // Create custom event to notify app.js
-      document.dispatchEvent(new CustomEvent(
-        type === 'start' ? 'start-location-changed' : 'destination-location-changed', 
-        { detail: newPos }
-      ));
-    });
-    
-    // Store marker reference
-    if (type === 'start') {
-      this.customStartMarker = marker;
-    } else {
-      this.customDestMarker = marker;
+      // Add popup with information
+      marker.bindPopup(type === 'start' ? 'Start Location' : 'Destination').openPopup();
+      
+      // Add drag end event for position updates
+      marker.on('dragend', (e) => {
+        const newPos = e.target.getLatLng();
+        console.log(`Map: ${type} marker dragged to:`, newPos);
+        
+        // Create custom event to notify app.js
+        document.dispatchEvent(new CustomEvent(
+          type === 'start' ? 'start-location-changed' : 'destination-location-changed', 
+          { detail: newPos }
+        ));
+      });
+      
+      // Add extra feedback for a more modern experience
+      if (type === 'start') {
+        this.customStartMarker = marker;
+        this.showBriefIndicator('Start location set!', '#4CAF50');
+      } else {
+        this.customDestMarker = marker;
+        this.showBriefIndicator('Destination set!', '#F44336');
+      }
+      
+      console.log(`Map: ${type} marker created successfully`);
+      return marker;
+    } catch (error) {
+      console.error(`Map: Error creating ${type} marker:`, error);
+      alert(`Failed to create marker: ${error.message}`);
+      return null;
     }
-    
-    return marker;
   }
   
+  /**
+   * Show a brief success indicator
+   * @param {string} message - Message to show
+   * @param {string} color - Color of the indicator
+   */
+  showBriefIndicator(message, color) {
+    const indicator = document.createElement('div');
+    indicator.style.position = 'absolute';
+    indicator.style.top = '50%';
+    indicator.style.left = '50%';
+    indicator.style.transform = 'translate(-50%, -50%)';
+    indicator.style.backgroundColor = color;
+    indicator.style.color = 'white';
+    indicator.style.padding = '10px 20px';
+    indicator.style.borderRadius = '20px';
+    indicator.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+    indicator.style.zIndex = '1000';
+    indicator.style.opacity = '0';
+    indicator.style.transition = 'opacity 0.3s';
+    indicator.textContent = message;
+    
+    document.getElementById('map').appendChild(indicator);
+    
+    // Fade in
+    setTimeout(() => {
+      indicator.style.opacity = '1';
+    }, 10);
+    
+    // Fade out and remove
+    setTimeout(() => {
+      indicator.style.opacity = '0';
+      setTimeout(() => {
+        document.getElementById('map').removeChild(indicator);
+      }, 300);
+    }, 1500);
+  }
+
   /**
    * Clear all custom location markers
    */

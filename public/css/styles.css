@@ -525,19 +525,25 @@ footer {
 /* Map Message Overlay */
 .map-message {
   position: absolute;
-  top: 20px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   background-color: rgba(0, 0, 0, 0.7);
   color: white;
-  padding: 10px 15px;
-  border-radius: 4px;
-  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 5px;
   z-index: 1000;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  max-width: 80%;
+  font-size: 16px;
+  font-weight: bold;
   text-align: center;
   pointer-events: none;
+}
+
+/* Add animation for map message */
+@keyframes pulse {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.05); }
+  100% { transform: translate(-50%, -50%) scale(1); }
 }
 
 /* Custom Location Markers */
@@ -559,6 +565,12 @@ footer {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
   font-weight: bold;
   font-size: 16px;
+  transition: transform 0.2s;
+}
+
+.start-marker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.4);
 }
 
 .destination-marker {
@@ -574,6 +586,12 @@ footer {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
   font-weight: bold;
   font-size: 16px;
+  transition: transform 0.2s;
+}
+
+.destination-marker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.4);
 }
 
 /* Custom Location Selection */
@@ -597,16 +615,22 @@ footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, transform 0.2s;
 }
 
 .location-picker-btn:hover {
   background-color: #1976d2;
+  transform: scale(1.1);
 }
 
 .location-picker-btn:disabled {
   background-color: #b1b1b1;
   cursor: not-allowed;
+  transform: none;
+}
+
+.location-picker-btn:active {
+  transform: scale(0.95);
 }
 
 .pin-icon {
@@ -620,6 +644,10 @@ footer {
   color: #666;
   font-style: italic;
   min-height: 18px;
+  background-color: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: none;
 }
 
 .selection-mode-toggle {

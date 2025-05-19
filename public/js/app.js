@@ -12,6 +12,19 @@ document.addEventListener('DOMContentLoaded', function() {
   const estimatedTimeEl = document.getElementById('estimated-time');
   const chargingStopsEl = document.getElementById('charging-stops');
   const tripDetailsEl = document.getElementById('trip-details');
+  
+  // SPKLU Elements
+  const showAllSpkluBtn = document.getElementById('show-all-spklu-btn');
+  const hideAllSpkluBtn = document.getElementById('hide-all-spklu-btn');
+  const startIndexingBtn = document.getElementById('start-indexing-btn');
+  const indexingProgressContainer = document.getElementById('indexing-progress');
+  const progressFill = document.getElementById('progress-fill');
+  const progressText = document.getElementById('progress-text');
+  const spkluCountEl = document.getElementById('spklu-count');
+  
+  // SPKLU Tracking
+  let indexingInProgress = false;
+  let progressCheckInterval = null;
 
   // Initialize map
   mapHandler.initMap();
@@ -21,6 +34,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Add event listeners
   planTripBtn.addEventListener('click', planTrip);
+  showAllSpkluBtn.addEventListener('click', showAllSPKLU);
+  hideAllSpkluBtn.addEventListener('click', hideAllSPKLU);
+  startIndexingBtn.addEventListener('click', startIndexingSPKLU);
 
   /**
    * Load initial data from API
@@ -42,6 +58,20 @@ document.addEventListener('DOMContentLoaded', function() {
       // Fetch charging stations
       const chargingStations = await api.getChargingStations();
       mapHandler.displayChargingStations(chargingStations);
+      
+      // Check if we have any indexed SPKLU and show them
+      try {
+        const result = await api.getAllSPKLU();
+        if (result.success && result.stations && result.stations.length > 0) {
+          console.log(`Loading ${result.stations.length} previously indexed SPKLU stations`);
+          spkluCountEl.textContent = `SPKLU Found: ${result.count}`;
+          
+          // Enable show all mode to keep all SPKLU visible
+          mapHandler.setShowAllMode(true, result.stations);
+        }
+      } catch (e) {
+        console.warn('Could not load indexed SPKLU:', e);
+      }
       
       // Hide loading state
       setButtonLoading(false);
@@ -255,5 +285,147 @@ document.addEventListener('DOMContentLoaded', function() {
    */
   function showErrorMessage(message) {
     alert(message);
+  }
+
+  /**
+   * Show all indexed SPKLU in Indonesia
+   */
+  async function showAllSPKLU() {
+    try {
+      showAllSpkluBtn.disabled = true;
+      showAllSpkluBtn.textContent = 'Loading...';
+      
+      // Get all indexed SPKLU
+      const result = await api.getAllSPKLU();
+      
+      if (result.success) {
+        // Update SPKLU count
+        spkluCountEl.textContent = `SPKLU Found: ${result.count}`;
+        
+        // Clear existing SPKLU markers and display all stations
+        if (result.stations && result.stations.length > 0) {
+          // Enable "show all" mode to keep stations visible when moving the map
+          mapHandler.setShowAllMode(true, result.stations);
+        } else if (!result.isComplete) {
+          alert('No SPKLU stations indexed yet. Click "Index All SPKLU in Indonesia" first.');
+        } else {
+          alert('No SPKLU stations found in Indonesia.');
+        }
+      } else {
+        alert('Failed to load SPKLU data.');
+      }
+      
+      showAllSpkluBtn.disabled = false;
+      showAllSpkluBtn.textContent = 'Show All SPKLU in Indonesia';
+    } catch (error) {
+      console.error('Error showing all SPKLU:', error);
+      alert('Failed to show all SPKLU: ' + (error.message || 'Unknown error'));
+      showAllSpkluBtn.disabled = false;
+      showAllSpkluBtn.textContent = 'Show All SPKLU in Indonesia';
+    }
+  }
+
+  /**
+   * Start indexing all SPKLU in Indonesia
+   */
+  async function startIndexingSPKLU() {
+    if (indexingInProgress) {
+      alert('Indexing is already in progress.');
+      return;
+    }
+    
+    try {
+      // Update UI
+      startIndexingBtn.disabled = true;
+      startIndexingBtn.textContent = 'Indexing...';
+      indexingProgressContainer.style.display = 'block';
+      progressFill.style.width = '0%';
+      progressText.textContent = '0%';
+      indexingInProgress = true;
+      
+      // Start indexing
+      const result = await api.startSPKLUIndexing();
+      
+      if (result.success) {
+        // Check progress periodically
+        progressCheckInterval = setInterval(checkIndexingProgress, 2000);
+      } else {
+        alert('Failed to start indexing: ' + (result.error || 'Unknown error'));
+        resetIndexingUI();
+      }
+    } catch (error) {
+      console.error('Error starting SPKLU indexing:', error);
+      alert('Failed to start indexing: ' + (error.message || 'Unknown error'));
+      resetIndexingUI();
+    }
+  }
+  
+  /**
+   * Check the progress of SPKLU indexing
+   */
+  async function checkIndexingProgress() {
+    try {
+      const result = await api.getSPKLUIndexingProgress();
+      
+      if (result.success) {
+        // Update progress bar
+        const progress = result.progress || 0;
+        progressFill.style.width = `${progress}%`;
+        progressText.textContent = `${progress}%`;
+        
+        // Check if indexing is complete
+        if (result.isComplete) {
+          clearInterval(progressCheckInterval);
+          
+          // Get all indexed SPKLU
+          const spkluData = await api.getAllSPKLU();
+          spkluCountEl.textContent = `SPKLU Found: ${spkluData.count || 0}`;
+          
+          // Show all indexed SPKLU on the map
+          showAllSPKLU();
+          
+          // Reset UI after a short delay
+          setTimeout(resetIndexingUI, 1000);
+          
+          alert('Indexing complete! All SPKLU stations in Indonesia have been indexed.');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking indexing progress:', error);
+    }
+  }
+  
+  /**
+   * Reset the indexing UI elements
+   */
+  function resetIndexingUI() {
+    startIndexingBtn.disabled = false;
+    startIndexingBtn.textContent = 'Index All SPKLU in Indonesia';
+    indexingInProgress = false;
+    if (progressCheckInterval) {
+      clearInterval(progressCheckInterval);
+      progressCheckInterval = null;
+    }
+  }
+
+  /**
+   * Hide all indexed SPKLU in Indonesia
+   */
+  async function hideAllSPKLU() {
+    try {
+      hideAllSpkluBtn.disabled = true;
+      hideAllSpkluBtn.textContent = 'Loading...';
+      
+      // Hide all SPKLU
+      mapHandler.setShowAllMode(false);
+      
+      hideAllSpkluBtn.disabled = false;
+      hideAllSpkluBtn.textContent = 'Hide All SPKLU';
+    } catch (error) {
+      console.error('Error hiding all SPKLU:', error);
+      alert('Failed to hide all SPKLU: ' + (error.message || 'Unknown error'));
+      hideAllSpkluBtn.disabled = false;
+      hideAllSpkluBtn.textContent = 'Hide All SPKLU';
+    }
   }
 }); 

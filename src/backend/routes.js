@@ -1,11 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const AStar = require('../models/astar');
+const axios = require('axios'); // Tambahkan axios untuk HTTP requests
+const config = require('../utils/config'); // Import config
+const spkluFetcher = require('../utils/spkluFetcher');
 
 // Load data
 const roadNetwork = require('../data/road-network.json');
 const chargingStations = require('../data/charging-stations.json');
 const vehicles = require('../data/vehicles.json');
+
+// Get Google Maps API key from config
+const GOOGLE_MAPS_API_KEY = config.googleMapsApiKey;
 
 // Get all available vehicles
 router.get('/vehicles', (req, res) => {
@@ -20,6 +26,231 @@ router.get('/charging-stations', (req, res) => {
 // Get all cities (nodes in the road network)
 router.get('/cities', (req, res) => {
   res.json(roadNetwork.nodes);
+});
+
+// Get SPKLU photo from Google
+router.get('/spklu-photo/:photoReference', async (req, res) => {
+  try {
+    const { photoReference } = req.params;
+    const maxWidth = req.query.maxwidth || 400;
+    
+    if (!photoReference) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing photo reference"
+      });
+    }
+
+    if (!GOOGLE_MAPS_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "Google Maps API key not configured"
+      });
+    }
+
+    // Proxy the photo request to Google
+    const response = await axios({
+      method: 'get',
+      url: 'https://maps.googleapis.com/maps/api/place/photo',
+      params: {
+        maxwidth: maxWidth,
+        photoreference: photoReference,
+        key: GOOGLE_MAPS_API_KEY
+      },
+      responseType: 'stream'
+    });
+    
+    // Set appropriate headers
+    res.set('Content-Type', response.headers['content-type']);
+    
+    // Pipe the image data to our response
+    response.data.pipe(res);
+    
+  } catch (error) {
+    console.error('Error fetching SPKLU photo:', error);
+    res.status(500).json({
+      success: false,
+      error: "Error fetching SPKLU photo"
+    });
+  }
+});
+
+// Search for SPKLU using Google Places API
+router.post('/search-spklu-google', async (req, res) => {
+  try {
+    const { bounds } = req.body;
+    
+    if (!bounds) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing map bounds"
+      });
+    }
+
+    if (!GOOGLE_MAPS_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "Google Maps API key not configured"
+      });
+    }
+
+    // Calculate the center of the bounds
+    const center = {
+      lat: (bounds.north + bounds.south) / 2,
+      lng: (bounds.east + bounds.west) / 2
+    };
+    
+    // Calculate radius in meters (approximate)
+    const earthRadius = 6371000; // earth radius in meters
+    const latDiff = Math.abs(bounds.north - bounds.south) * Math.PI / 180;
+    const lngDiff = Math.abs(bounds.east - bounds.west) * Math.PI / 180;
+    const latDistance = latDiff * earthRadius;
+    const lngDistance = lngDiff * earthRadius * Math.cos(center.lat * Math.PI / 180);
+    const radius = Math.max(latDistance, lngDistance) / 2;
+    
+    // Make request to Google Places API
+    const response = await axios.get('https://maps.googleapis.com/maps/api/place/nearbysearch/json', {
+      params: {
+        key: GOOGLE_MAPS_API_KEY,
+        location: `${center.lat},${center.lng}`,
+        radius: Math.min(radius, 50000), // Google Places API limits radius to 50km
+        keyword: 'SPKLU OR EV charging station OR stasiun pengisian kendaraan listrik',
+        type: 'point_of_interest'
+      }
+    });
+
+    if (response.data.status !== 'OK' && response.data.status !== 'ZERO_RESULTS') {
+      console.error('Google Places API error:', response.data.status);
+      return res.status(500).json({
+        success: false,
+        error: `Google Places API error: ${response.data.status}`
+      });
+    }
+
+    // Transform Google Places results to our charging station format
+    const spkluStations = response.data.results.map(place => {
+      // Try to determine charging speed and connectors from place details (if available)
+      // This is approximate as Google doesn't provide this information directly
+      let chargingSpeed = 50; // default to 50kW
+      let connectorTypes = ["CCS", "CHAdeMO"]; // default connectors
+      
+      // Extract attributes from place name or types if possible
+      if (place.name.toLowerCase().includes('fast') || place.name.toLowerCase().includes('cepat')) {
+        chargingSpeed = 100;
+      }
+      
+      if (place.name.toLowerCase().includes('type 2') || place.name.toLowerCase().includes('tipe 2')) {
+        connectorTypes.push("Type 2");
+      }
+      
+      // Map amenities based on place types
+      const amenities = [];
+      if (place.types.includes('cafe') || place.types.includes('restaurant')) {
+        amenities.push('cafe');
+      }
+      if (place.types.includes('convenience_store') || place.types.includes('store')) {
+        amenities.push('convenience store');
+      }
+      if (place.types.includes('parking')) {
+        amenities.push('parking');
+      }
+      if (place.types.includes('gas_station')) {
+        amenities.push('gas station');
+      }
+      
+      // Create a charging station object
+      return {
+        id: place.place_id,
+        name: place.name,
+        location: {
+          lat: place.geometry.location.lat,
+          lng: place.geometry.location.lng
+        },
+        chargingSpeed,
+        connectorTypes,
+        amenities,
+        rating: place.rating || 0,
+        photoReference: place.photos && place.photos.length > 0 ? place.photos[0].photo_reference : null,
+        placeDetails: place.vicinity || ''
+      };
+    });
+
+    res.json({
+      success: true,
+      stations: spkluStations
+    });
+    
+  } catch (error) {
+    console.error('Error searching for SPKLU:', error);
+    res.status(500).json({
+      success: false,
+      error: "Error searching for SPKLU stations"
+    });
+  }
+});
+
+// Start indexing all SPKLU in Indonesia
+router.post('/start-spklu-indexing', async (req, res) => {
+  try {
+    if (!GOOGLE_MAPS_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "Google Maps API key not configured"
+      });
+    }
+
+    // Start the indexing process in background
+    spkluFetcher.startIndexingAllSPKLU();
+
+    res.json({
+      success: true,
+      message: "Indexing SPKLU di seluruh Indonesia telah dimulai."
+    });
+  } catch (error) {
+    console.error('Error starting SPKLU indexing:', error);
+    res.status(500).json({
+      success: false,
+      error: "Error starting SPKLU indexing"
+    });
+  }
+});
+
+// Get all indexed SPKLU
+router.get('/all-spklu', (req, res) => {
+  try {
+    const spkluData = spkluFetcher.getAllSPKLU();
+    
+    res.json({
+      success: true,
+      isComplete: spkluData.isComplete,
+      progress: spkluData.progress,
+      count: spkluData.stations.length,
+      stations: spkluData.stations
+    });
+  } catch (error) {
+    console.error('Error getting all SPKLU:', error);
+    res.status(500).json({
+      success: false,
+      error: "Error retrieving all SPKLU stations"
+    });
+  }
+});
+
+// Get indexing progress
+router.get('/spklu-indexing-progress', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      isComplete: spkluFetcher.isIndexingComplete(),
+      progress: spkluFetcher.getIndexingProgress()
+    });
+  } catch (error) {
+    console.error('Error getting indexing progress:', error);
+    res.status(500).json({
+      success: false,
+      error: "Error retrieving indexing progress"
+    });
+  }
 });
 
 // Calculate route

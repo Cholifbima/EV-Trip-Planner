@@ -103,6 +103,70 @@ select {
   cursor: not-allowed;
 }
 
+/* Secondary Button */
+.secondary-btn {
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  transition: background-color 0.2s;
+}
+
+.secondary-btn:hover {
+  background-color: #3f9142;
+}
+
+.secondary-btn:disabled {
+  background-color: #b1b1b1;
+  cursor: not-allowed;
+}
+
+/* Progress Bar */
+.progress-container {
+  margin: 1rem 0;
+}
+
+.progress-bar {
+  height: 12px;
+  background-color: #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #ff9800;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 0.8rem;
+  text-align: right;
+  color: #666;
+}
+
+.spklu-count {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  text-align: center;
+  color: #666;
+  padding: 0.5rem;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+/* SPKLU Options */
+.spklu-options {
+  padding: 0.5rem 0;
+}
+
 /* Results Section */
 .results-section {
   margin-top: 2rem;
@@ -205,6 +269,81 @@ select {
   background-color: #9c27b0;
   border-radius: 50%;
   border: 2px solid white;
+}
+
+/* SPKLU Marker Styles */
+.spklu-marker {
+  background: transparent;
+  border: none;
+}
+
+.spklu-marker-inner {
+  width: 30px;
+  height: 30px;
+  background-color: #ff5722;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-size: 16px;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+  border: 2px solid white;
+  transition: transform 0.2s, background-color 0.2s;
+}
+
+.spklu-marker-inner:hover {
+  transform: scale(1.2);
+  background-color: #ff7043;
+}
+
+/* SPKLU Popup Styles */
+.spklu-popup {
+  max-width: 300px;
+}
+
+.spklu-popup h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: #333;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 5px;
+  text-align: center;
+}
+
+.spklu-photo {
+  width: 100%;
+  height: auto;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  display: block;
+  margin: 0 auto 10px auto;
+}
+
+.spklu-details {
+  font-size: 13px;
+}
+
+.spklu-details p {
+  margin: 4px 0;
+}
+
+/* Leaflet popup customization */
+.leaflet-popup-content-wrapper {
+  border-radius: 6px;
+}
+
+.leaflet-popup-content {
+  margin: 10px 14px;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  top: 8px;
+  right: 8px;
+  color: #777;
 }
 
 /* Footer */

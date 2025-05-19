@@ -52,6 +52,22 @@
         <button id="plan-trip-btn" class="primary-btn">Plan Trip</button>
       </div>
       
+      <div class="form-section">
+        <h2>SPKLU Options</h2>
+        <div class="spklu-options">
+          <button id="show-all-spklu-btn" class="secondary-btn">Show All SPKLU in Indonesia</button>
+          <button id="hide-all-spklu-btn" class="secondary-btn" style="background-color: #f44336;">Hide All SPKLU</button>
+          <button id="start-indexing-btn" class="secondary-btn">Index All SPKLU in Indonesia</button>
+          <div id="indexing-progress" class="progress-container" style="display: none;">
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <div id="progress-text" class="progress-text">0%</div>
+          </div>
+          <div id="spklu-count" class="spklu-count">SPKLU Found: 0</div>
+        </div>
+      </div>
+      
       <div class="results-section" id="results-section" style="display: none;">
         <h2>Trip Results</h2>
         

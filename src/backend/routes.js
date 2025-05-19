@@ -405,4 +405,338 @@ router.post('/route', (req, res) => {
   }
 });
 
+// Calculate route with custom locations
+router.post('/route-custom', (req, res) => {
+  try {
+    const { vehicleId, startLocation, endLocation, forceRoute } = req.body;
+    
+    // Validate inputs
+    if (!vehicleId || !startLocation || !endLocation) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Missing required parameters: vehicleId, startLocation, or endLocation" 
+      });
+    }
+    
+    // Validate coordinates
+    if (!startLocation.lat || !startLocation.lng || !endLocation.lat || !endLocation.lng ||
+        typeof startLocation.lat !== 'number' || typeof startLocation.lng !== 'number' ||
+        typeof endLocation.lat !== 'number' || typeof endLocation.lng !== 'number') {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid coordinates. Make sure lat and lng values are provided as numbers."
+      });
+    }
+    
+    // Check if start and destination are too close
+    const directDistance = calculateHaversineDistance(
+      startLocation.lat, startLocation.lng,
+      endLocation.lat, endLocation.lng
+    );
+    
+    // Find vehicle
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    if (!vehicle) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Vehicle with ID ${vehicleId} not found` 
+      });
+    }
+    
+    // Find the nearest nodes in the road network to the custom coordinates
+    const startNodeResult = findNearestNode(startLocation, roadNetwork.nodes);
+    const endNodeResult = findNearestNode(endLocation, roadNetwork.nodes);
+    
+    if (!startNodeResult.node || !endNodeResult.node) {
+      return res.status(400).json({
+        success: false,
+        error: "Could not find nearby road network nodes for the given coordinates. Try selecting locations closer to major roads or cities."
+      });
+    }
+    
+    // Mark as warning if locations are very close, but continue if forceRoute is true
+    let nearbyWarning = null;
+    if (directDistance < 1 || startNodeResult.node.id === endNodeResult.node.id) {
+      nearbyWarning = "Start and destination are very close. No charging stations may be needed for this route.";
+      
+      // If user is not forcing the route, return a special error that the frontend can handle
+      if (!forceRoute) {
+        return res.status(400).json({
+          success: false,
+          error: "Start and destination map to the same road network node. Please select locations farther apart.",
+          canForceRoute: true,
+          directDistance
+        });
+      }
+    }
+    
+    // Warning if nodes are too far from the selected points
+    if (startNodeResult.distance > 20 || endNodeResult.distance > 20) {
+      console.warn(`Custom location is far from the nearest road network node: 
+        Start distance: ${startNodeResult.distance.toFixed(2)}km, 
+        End distance: ${endNodeResult.distance.toFixed(2)}km`);
+    }
+    
+    const startNode = startNodeResult.node;
+    const endNode = endNodeResult.node;
+    
+    // For very nearby points, create a direct route if same node
+    if (startNode.id === endNode.id && forceRoute) {
+      // Create a simple direct route with just the two user points
+      const response = {
+        success: true,
+        warning: nearbyWarning,
+        directRoute: true,
+        route: {
+          path: [
+            {
+              id: startNode.id,
+              name: `Custom Start (${startLocation.lat.toFixed(4)}, ${startLocation.lng.toFixed(4)})`,
+              location: startLocation
+            },
+            {
+              id: endNode.id,
+              name: `Custom Destination (${endLocation.lat.toFixed(4)}, ${endLocation.lng.toFixed(4)})`,
+              location: endLocation
+            }
+          ],
+          chargingStops: [], // No charging needed for very short routes
+          restStops: [],
+          totalDistance: directDistance,
+          estimatedTripTimeHours: directDistance / 60, // Assuming 60 km/h average speed
+          estimatedTripTimeMinutes: Math.round((directDistance / 60) * 60) // Convert hours to minutes
+        },
+        vehicle: {
+          id: vehicle.id,
+          name: vehicle.name,
+          range: vehicle.range,
+          batteryCapacity: vehicle.batteryCapacity
+        }
+      };
+      
+      return res.json(response);
+    }
+    
+    // Initialize A* algorithm
+    const astar = new AStar(roadNetwork, chargingStations, vehicle);
+    
+    // Find path using the nearest nodes
+    const result = astar.findPath(startNode.id, endNode.id);
+    
+    if (!result.success) {
+      return res.status(404).json({
+        success: false,
+        error: result.error || "Tidak dapat menemukan rute yang sesuai. Kemungkinan tidak ada jalur yang terhubung atau SPKLU yang cukup di sepanjang rute."
+      });
+    }
+    
+    // Ensure we have a valid path with at least 1 point when forceRoute is true,
+    // or at least 2 points for normal routing
+    const minPathLength = forceRoute ? 1 : 2;
+    if (!result.path || result.path.length < minPathLength) {
+      // If forcing route, create a direct path
+      if (forceRoute) {
+        const response = {
+          success: true,
+          warning: nearbyWarning,
+          directRoute: true,
+          route: {
+            path: [
+              {
+                id: startNode.id,
+                name: `Custom Start (${startLocation.lat.toFixed(4)}, ${startLocation.lng.toFixed(4)})`,
+                location: startLocation
+              },
+              {
+                id: endNode.id,
+                name: `Custom Destination (${endLocation.lat.toFixed(4)}, ${endLocation.lng.toFixed(4)})`,
+                location: endLocation
+              }
+            ],
+            chargingStops: [], // No charging needed for very short routes
+            restStops: [],
+            totalDistance: directDistance,
+            estimatedTripTimeHours: directDistance / 60, // Assuming 60 km/h average speed
+            estimatedTripTimeMinutes: Math.round((directDistance / 60) * 60) // Convert hours to minutes
+          },
+          vehicle: {
+            id: vehicle.id,
+            name: vehicle.name,
+            range: vehicle.range,
+            batteryCapacity: vehicle.batteryCapacity
+          }
+        };
+        
+        return res.json(response);
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "Could not generate a valid route with multiple points. Please try different locations."
+        });
+      }
+    }
+    
+    // Get complete path with coordinates
+    const pathWithCoordinates = result.path.map((nodeId, index) => {
+      const node = roadNetwork.nodes.find(n => n.id === nodeId);
+      
+      // Override the first and last nodes with custom locations
+      let name = node.name;
+      let location = node.location;
+      
+      if (index === 0) {
+        name = `Custom Start (${startLocation.lat.toFixed(4)}, ${startLocation.lng.toFixed(4)})`;
+        location = startLocation;
+      } else if (index === result.path.length - 1) {
+        name = `Custom Destination (${endLocation.lat.toFixed(4)}, ${endLocation.lng.toFixed(4)})`;
+        location = endLocation;
+      }
+      
+      return {
+        id: nodeId,
+        name: name,
+        location: location
+      };
+    });
+    
+    // Get charging stops with coordinates
+    const chargingStopsWithDetails = result.chargingStops.map(stop => {
+      const node = roadNetwork.nodes.find(n => n.id === stop.nodeId);
+      return {
+        ...stop,
+        location: node.location,
+        chargingTimeMinutes: Math.round(stop.chargingTime * 60) // Convert to minutes
+      };
+    });
+    
+    // Calculate rest stops (every 2 hours of driving, excluding charging stops)
+    const restStops = [];
+    const drivingHoursPerSegment = 2; // Hours of driving before rest
+    const totalDrivingTime = result.totalDistance / 60; // Assuming 60 km/h average speed
+    
+    if (totalDrivingTime > drivingHoursPerSegment) {
+      let cumulativeDistance = 0;
+      let lastRestStopIndex = 0;
+      
+      for (let i = 0; i < result.path.length - 1; i++) {
+        const currentNodeId = result.path[i];
+        const nextNodeId = result.path[i + 1];
+        
+        // Find edge between these nodes
+        const edge = roadNetwork.edges.find(e => 
+          (e.from === currentNodeId && e.to === nextNodeId) || 
+          (e.to === currentNodeId && e.from === nextNodeId)
+        );
+        
+        if (edge) {
+          cumulativeDistance += edge.distance;
+          const cumulativeDrivingTime = cumulativeDistance / 60;
+          
+          // Check if we need a rest stop and this isn't already a charging stop
+          if (cumulativeDrivingTime >= drivingHoursPerSegment * (lastRestStopIndex + 1) && 
+              !chargingStopsWithDetails.some(stop => stop.nodeId === nextNodeId)) {
+            
+            const node = roadNetwork.nodes.find(n => n.id === nextNodeId);
+            restStops.push({
+              nodeId: nextNodeId,
+              name: node.name,
+              location: node.location,
+              restTimeMinutes: 15 // 15 minutes rest
+            });
+            
+            lastRestStopIndex++;
+          }
+        }
+      }
+    }
+    
+    // Format response
+    const response = {
+      success: true,
+      warning: nearbyWarning,
+      route: {
+        path: pathWithCoordinates,
+        chargingStops: chargingStopsWithDetails,
+        restStops,
+        totalDistance: result.totalDistance,
+        estimatedTripTimeHours: result.estimatedTime,
+        estimatedTripTimeMinutes: Math.round(result.estimatedTime * 60)
+      },
+      vehicle: {
+        id: vehicle.id,
+        name: vehicle.name,
+        range: vehicle.range,
+        batteryCapacity: vehicle.batteryCapacity
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Route calculation error with custom locations:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Server error calculating route with custom locations" 
+    });
+  }
+});
+
+// Helper function to find the nearest node to the given location
+function findNearestNode(location, nodes) {
+  let nearestNode = null;
+  let shortestDistance = Infinity;
+  
+  // Validate the input location
+  if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+    console.error('Invalid location provided to findNearestNode:', location);
+    return { node: null, distance: Infinity };
+  }
+  
+  // Ensure we have nodes to work with
+  if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
+    console.error('No valid nodes provided to findNearestNode');
+    return { node: null, distance: Infinity };
+  }
+  
+  nodes.forEach(node => {
+    // Skip invalid nodes
+    if (!node.location || typeof node.location.lat !== 'number' || typeof node.location.lng !== 'number') {
+      return;
+    }
+    
+    const distance = calculateHaversineDistance(
+      location.lat, 
+      location.lng, 
+      node.location.lat, 
+      node.location.lng
+    );
+    
+    if (distance < shortestDistance) {
+      shortestDistance = distance;
+      nearestNode = node;
+    }
+  });
+  
+  // Check if the nearest node is too far (more than 50km)
+  if (shortestDistance > 50) {
+    console.warn(`Nearest node is very far: ${shortestDistance.toFixed(2)}km`);
+  }
+  
+  return { node: nearestNode, distance: shortestDistance };
+}
+
+// Calculate Haversine distance between two points (great-circle distance)
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 module.exports = router; 

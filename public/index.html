@@ -33,20 +33,39 @@
           </select>
         </div>
         
-        <div class="form-group">
+        <div class="form-group location-selector">
           <label for="start-select">Start Location</label>
-          <select id="start-select">
-            <option value="">-- Select Start --</option>
-            <!-- Options will be loaded by JavaScript -->
-          </select>
+          <div class="location-input-group">
+            <select id="start-select">
+              <option value="">-- Select Start --</option>
+              <!-- Options will be loaded by JavaScript -->
+            </select>
+            <button id="custom-start-btn" class="location-picker-btn" type="button" title="Pick custom start location on map">
+              <span class="pin-icon">📍</span>
+            </button>
+          </div>
+          <div id="custom-start-coords" class="custom-coords"></div>
+        </div>
+        
+        <div class="form-group location-selector">
+          <label for="destination-select">Destination</label>
+          <div class="location-input-group">
+            <select id="destination-select">
+              <option value="">-- Select Destination --</option>
+              <!-- Options will be loaded by JavaScript -->
+            </select>
+            <button id="custom-dest-btn" class="location-picker-btn" type="button" title="Pick custom destination on map">
+              <span class="pin-icon">📍</span>
+            </button>
+          </div>
+          <div id="custom-dest-coords" class="custom-coords"></div>
         </div>
         
         <div class="form-group">
-          <label for="destination-select">Destination</label>
-          <select id="destination-select">
-            <option value="">-- Select Destination --</option>
-            <!-- Options will be loaded by JavaScript -->
-          </select>
+          <div class="selection-mode-toggle">
+            <input type="checkbox" id="custom-locations-toggle">
+            <label for="custom-locations-toggle">Enable custom location selection</label>
+          </div>
         </div>
         
         <button id="plan-trip-btn" class="primary-btn">Plan Trip</button>

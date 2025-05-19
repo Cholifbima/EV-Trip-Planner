@@ -18,6 +18,9 @@ class MapHandler {
     this.vehiclePosition = 0;
     this.googleSPKLUStations = []; // Added to store Google SPKLU stations
     this.isShowAllMode = false; // Flag to indicate if we're in "show all SPKLU" mode
+    this.messageContainer = null;
+    this.customStartMarker = null;
+    this.customDestMarker = null;
   }
 
   /**
@@ -274,15 +277,37 @@ class MapHandler {
 
     const { path, chargingStops, restStops } = routeData.route;
     
-    // Create initial waypoints from path
-    const initialWaypoints = path.map(point => 
+    // Validate path data
+    if (!path || !Array.isArray(path) || path.length === 0) {
+      console.error("Invalid path data for route display:", path);
+      return;
+    }
+    
+    // Create waypoints from path for routing
+    const waypoints = path.filter(point => {
+      return point && point.location && 
+             typeof point.location.lat === 'number' && 
+             typeof point.location.lng === 'number';
+    }).map(point => 
       L.latLng(point.location.lat, point.location.lng)
     );
     
+    // Simplify waypoints if there are too many close together
+    // This prevents back-and-forth routing issues
+    const simplifiedWaypoints = this.simplifyWaypoints(waypoints);
+    
     // Store these points as backup in case routesfound doesn't trigger
-    this.routePoints = initialWaypoints;
+    this.routePoints = simplifiedWaypoints;
 
-    // Create vehicle marker immediately with initial position
+    // Validate waypoints are sufficient for routing
+    if (simplifiedWaypoints.length < 2) {
+      console.error("Not enough valid waypoints for routing:", simplifiedWaypoints);
+      // Try to show points that are available anyway
+      this.showAvailablePoints(path);
+      return;
+    }
+
+    // Create vehicle marker at the start position
     const vehicleIcon = L.divIcon({
       className: 'vehicle-icon',
       html: '<div class="car-emoji">🚙</div>',
@@ -290,17 +315,49 @@ class MapHandler {
       iconAnchor: [15, 15]
     });
 
-    if (initialWaypoints.length > 0) {
-      this.markers.vehicle = L.marker(initialWaypoints[0], {
+    if (simplifiedWaypoints.length > 0) {
+      this.markers.vehicle = L.marker(simplifiedWaypoints[0], {
         icon: vehicleIcon
       }).addTo(this.map);
     }
     
-    console.log("Creating routing control with", initialWaypoints.length, "waypoints");
+    // Create markers for charging stops
+    if (chargingStops && chargingStops.length > 0) {
+      chargingStops.forEach(stop => {
+        // Only add if we have location data
+        if (stop.location && stop.location.lat && stop.location.lng) {
+          const marker = L.circleMarker([stop.location.lat, stop.location.lng], {
+            radius: 10,
+            fillColor: '#ff9800',
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+          }).addTo(this.map);
+
+          // Add popup with charging information
+          marker.bindPopup(`
+            <strong>${stop.stationName || 'Charging Stop'}</strong><br>
+            Charging Time: ${stop.chargingTimeMinutes || 0} minutes<br>
+            Energy Added: ${Math.round(stop.energyAdded) || 0} kWh
+          `);
+
+          this.markers.chargingStations.push(marker);
+        }
+      });
+    }
+    
+    console.log("Creating routing control with", simplifiedWaypoints.length, "waypoints");
+    
+    // Make sure waypoints are valid
+    if (simplifiedWaypoints.length < 2) {
+      console.error("Not enough valid waypoints for routing:", simplifiedWaypoints);
+      return;
+    }
 
     // Create and add routing control
     this.routingControl = L.Routing.control({
-      waypoints: initialWaypoints,
+      waypoints: simplifiedWaypoints,
       lineOptions: {
         styles: [{ color: '#1e88e5', opacity: 0.7, weight: 5 }],
         extendToWaypoints: true,
@@ -332,62 +389,52 @@ class MapHandler {
         
         // Start animation
         this.animateVehicle();
+        
+        // Fit the map to show the entire route
+        this.fitMapToRoute();
       } else {
         console.warn("No routes found in the event");
         // Fallback to starting animation with current points
         this.animateVehicle();
       }
     });
-    
-    // Fallback: If no routesfound event after 2 seconds, start animation with current points
+
+    // Create markers for rest stops
+    if (restStops && restStops.length > 0) {
+      restStops.forEach(stop => {
+        // Only add if we have location data
+        if (stop.location && stop.location.lat && stop.location.lng) {
+          const marker = L.circleMarker([stop.location.lat, stop.location.lng], {
+            radius: 8,
+            fillColor: '#4caf50',
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+          }).addTo(this.map);
+
+          // Add popup with rest stop information
+          marker.bindPopup(`
+            <strong>${stop.name || 'Rest Stop'}</strong><br>
+            Rest Time: ${stop.restTimeMinutes || 15} minutes
+          `);
+
+          this.markers.restStops.push(marker);
+        }
+      });
+    }
+
+    // Fit the map to show the entire route
+    this.fitMapToRoute();
+
+    // Fallback: If no routesfound event after 3 seconds, start animation with current points
     setTimeout(() => {
       if (this.routePoints.length > 0 && !this.animationFrame) {
         console.log("Starting animation with fallback route points");
         this.animateVehicle();
       }
-    }, 2000);
-
-    // Create markers for charging stops
-    chargingStops.forEach(stop => {
-      const marker = L.circleMarker([stop.location.lat, stop.location.lng], {
-        radius: 10,
-        fillColor: '#ff9800',
-        color: '#fff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.8
-      }).addTo(this.map);
-
-      // Add popup with charging information
-      marker.bindPopup(`
-        <strong>${stop.stationName}</strong><br>
-        Charging Time: ${stop.chargingTimeMinutes} minutes<br>
-        Energy Added: ${Math.round(stop.energyAdded)} kWh
-      `);
-
-      this.markers.chargingStations.push(marker);
-    });
-
-    // Create markers for rest stops
-    restStops.forEach(stop => {
-      const marker = L.circleMarker([stop.location.lat, stop.location.lng], {
-        radius: 8,
-        fillColor: '#4caf50',
-        color: '#fff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.8
-      }).addTo(this.map);
-
-      // Add popup with rest stop information
-      marker.bindPopup(`
-        <strong>${stop.name}</strong><br>
-        Rest Time: ${stop.restTimeMinutes} minutes
-      `);
-
-      this.markers.restStops.push(marker);
-    });
-
+    }, 3000);
+    
     // If we're not in show all mode, fetch SPKLU in the current view
     if (!this.isShowAllMode) {
       this.fetchSPKLUInView();
@@ -427,6 +474,12 @@ class MapHandler {
     console.log(`Animation speed: ${animationSpeed} (route length: ${routeLength} points)`);
 
     const animate = () => {
+      // Don't animate if route is too short
+      if (this.routePoints.length < 2) {
+        console.warn("Route too short for animation:", this.routePoints.length);
+        return;
+      }
+      
       // Get current and next points
       const currentIndex = Math.floor(this.vehiclePosition);
       const nextIndex = Math.min(currentIndex + 1, this.routePoints.length - 1);
@@ -533,6 +586,241 @@ class MapHandler {
       this.clearGoogleSPKLU();
       this.fetchSPKLUInView();
     }
+  }
+
+  /**
+   * Enable location picker mode on the map
+   * @param {string} type - 'start' or 'destination'
+   * @param {Function} callback - Called when a location is selected
+   */
+  enableLocationPicker(type, callback) {
+    // Remove any existing click handlers
+    this.map.off('click');
+    
+    // Show helper message
+    this.showMapMessage(`Click on the map to select your ${type === 'start' ? 'starting point' : 'destination'}`);
+    
+    // Add click handler to the map
+    this.map.once('click', (e) => {
+      // Get clicked coordinates
+      const position = e.latlng;
+      
+      // Create marker for the selected location
+      this.setCustomLocation(type, position);
+      
+      // Hide the message
+      this.hideMapMessage();
+      
+      // Call the callback function with the selected position
+      if (callback) callback(position);
+    });
+  }
+  
+  /**
+   * Show a message overlay on the map
+   * @param {string} message - The message to display
+   */
+  showMapMessage(message) {
+    // Create message container if it doesn't exist
+    if (!this.messageContainer) {
+      this.messageContainer = document.createElement('div');
+      this.messageContainer.className = 'map-message';
+      document.getElementById('map').appendChild(this.messageContainer);
+    }
+    
+    // Set message and show
+    this.messageContainer.textContent = message;
+    this.messageContainer.style.display = 'block';
+  }
+  
+  /**
+   * Hide the map message overlay
+   */
+  hideMapMessage() {
+    if (this.messageContainer) {
+      this.messageContainer.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Set a custom location marker
+   * @param {string} type - 'start' or 'destination'
+   * @param {L.LatLng} position - The marker position
+   */
+  setCustomLocation(type, position) {
+    // Remove existing marker if any
+    if (type === 'start' && this.customStartMarker) {
+      this.map.removeLayer(this.customStartMarker);
+    } else if (type === 'destination' && this.customDestMarker) {
+      this.map.removeLayer(this.customDestMarker);
+    }
+    
+    // Create icon based on type
+    const icon = L.divIcon({
+      className: type === 'start' ? 'start-marker-icon' : 'destination-marker-icon',
+      html: `<div class="${type === 'start' ? 'start-marker' : 'destination-marker'}">${type === 'start' ? 'A' : 'B'}</div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
+    });
+    
+    // Create marker
+    const marker = L.marker(position, {
+      icon,
+      draggable: true
+    }).addTo(this.map);
+    
+    // Add popup with information
+    marker.bindPopup(type === 'start' ? 'Start Location' : 'Destination');
+    
+    // Add drag end event for position updates
+    marker.on('dragend', (e) => {
+      const newPos = e.target.getLatLng();
+      
+      // Create custom event to notify app.js
+      document.dispatchEvent(new CustomEvent(
+        type === 'start' ? 'start-location-changed' : 'destination-location-changed', 
+        { detail: newPos }
+      ));
+    });
+    
+    // Store marker reference
+    if (type === 'start') {
+      this.customStartMarker = marker;
+    } else {
+      this.customDestMarker = marker;
+    }
+    
+    return marker;
+  }
+  
+  /**
+   * Clear all custom location markers
+   */
+  clearCustomLocations() {
+    if (this.customStartMarker) {
+      this.map.removeLayer(this.customStartMarker);
+      this.customStartMarker = null;
+    }
+    
+    if (this.customDestMarker) {
+      this.map.removeLayer(this.customDestMarker);
+      this.customDestMarker = null;
+    }
+  }
+
+  /**
+   * Shows available points on the map when there aren't enough for routing
+   * @param {Array} pathPoints - Array of path points
+   */
+  showAvailablePoints(pathPoints) {
+    if (!pathPoints || !Array.isArray(pathPoints)) return;
+    
+    // Filter out invalid points
+    const validPoints = pathPoints.filter(point => 
+      point && point.location && 
+      typeof point.location.lat === 'number' && 
+      typeof point.location.lng === 'number'
+    );
+    
+    if (validPoints.length === 0) {
+      console.warn("No valid points available to display");
+      return;
+    }
+    
+    // Create markers for each valid point
+    validPoints.forEach((point, index) => {
+      const isStart = index === 0;
+      const isEnd = index === validPoints.length - 1;
+      
+      // Create different styled markers for start, end, and waypoints
+      let marker;
+      
+      if (isStart) {
+        // Start marker (green)
+        marker = L.circleMarker([point.location.lat, point.location.lng], {
+          radius: 10,
+          fillColor: '#4CAF50',
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        }).addTo(this.map);
+        marker.bindPopup(`<strong>Start:</strong> ${point.name}`);
+      } else if (isEnd) {
+        // End marker (red)
+        marker = L.circleMarker([point.location.lat, point.location.lng], {
+          radius: 10,
+          fillColor: '#F44336',
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        }).addTo(this.map);
+        marker.bindPopup(`<strong>Destination:</strong> ${point.name}`);
+      } else {
+        // Waypoint (blue)
+        marker = L.circleMarker([point.location.lat, point.location.lng], {
+          radius: 6,
+          fillColor: '#2196F3',
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        }).addTo(this.map);
+        marker.bindPopup(`<strong>Waypoint:</strong> ${point.name}`);
+      }
+      
+      // Add to appropriate marker collection
+      if (isStart || isEnd) {
+        this.markers.chargingStations.push(marker);
+      } else {
+        this.markers.restStops.push(marker);
+      }
+    });
+    
+    // Fit map to these points
+    if (validPoints.length > 0) {
+      const bounds = L.latLngBounds(
+        validPoints.map(p => [p.location.lat, p.location.lng])
+      );
+      this.map.fitBounds(bounds);
+    }
+    
+    // Show a message to the user about route creation failure
+    this.showMapMessage("Could not create route. Try selecting different locations.");
+    
+    // Hide the message after a few seconds
+    setTimeout(() => {
+      this.hideMapMessage();
+    }, 5000);
+  }
+
+  /**
+   * Simplify waypoints if there are too many close together
+   * @param {Array} waypoints - Array of L.LatLng objects
+   * @returns {Array} - Simplified array of L.LatLng objects
+   */
+  simplifyWaypoints(waypoints) {
+    if (!waypoints || waypoints.length < 2) return waypoints;
+
+    const simplified = [];
+    let lastPoint = waypoints[0];
+
+    simplified.push(lastPoint);
+
+    for (let i = 1; i < waypoints.length; i++) {
+      const currentPoint = waypoints[i];
+      const dx = currentPoint.lng - lastPoint.lng;
+      const dy = currentPoint.lat - lastPoint.lat;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance > 0.001) {
+        simplified.push(currentPoint);
+        lastPoint = currentPoint;
+      }
+    }
+
+    return simplified;
   }
 }
 

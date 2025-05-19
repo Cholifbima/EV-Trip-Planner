@@ -187,6 +187,44 @@ class ApiClient {
   }
 
   /**
+   * Plan trip with custom start and destination coordinates
+   * @param {string} vehicleId - Selected vehicle ID
+   * @param {Object} startLocation - Start location coordinates {lat, lng}
+   * @param {Object} endLocation - Destination coordinates {lat, lng}
+   * @param {boolean} forceRoute - Force route creation even for nearby points
+   * @returns {Promise<Object>} - Trip planning results
+   */
+  async planTripWithCustomLocations(vehicleId, startLocation, endLocation, forceRoute = false) {
+    try {
+      const response = await fetch(`${this.baseUrl}/route-custom`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          vehicleId,
+          startLocation,
+          endLocation,
+          forceRoute
+        })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        const error = new Error(data.error || 'Failed to plan trip with custom locations');
+        error.response = { data };
+        throw error;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('API Error in planTripWithCustomLocations:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get the URL for a SPKLU photo
    * @param {string} photoReference - The photo reference ID from Google Places API
    * @param {number} maxWidth - Maximum width of the photo (optional)

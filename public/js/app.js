@@ -13,6 +13,13 @@ document.addEventListener('DOMContentLoaded', function() {
   const chargingStopsEl = document.getElementById('charging-stops');
   const tripDetailsEl = document.getElementById('trip-details');
   
+  // Custom location elements
+  const customLocationsToggle = document.getElementById('custom-locations-toggle');
+  const customStartBtn = document.getElementById('custom-start-btn');
+  const customDestBtn = document.getElementById('custom-dest-btn');
+  const customStartCoordsEl = document.getElementById('custom-start-coords');
+  const customDestCoordsEl = document.getElementById('custom-dest-coords');
+  
   // SPKLU Elements
   const showAllSpkluBtn = document.getElementById('show-all-spklu-btn');
   const hideAllSpkluBtn = document.getElementById('hide-all-spklu-btn');
@@ -25,6 +32,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // SPKLU Tracking
   let indexingInProgress = false;
   let progressCheckInterval = null;
+  
+  // Custom locations
+  let customMode = false;
+  let customStartLocation = null;
+  let customDestLocation = null;
 
   // Initialize map
   mapHandler.initMap();
@@ -37,6 +49,21 @@ document.addEventListener('DOMContentLoaded', function() {
   showAllSpkluBtn.addEventListener('click', showAllSPKLU);
   hideAllSpkluBtn.addEventListener('click', hideAllSPKLU);
   startIndexingBtn.addEventListener('click', startIndexingSPKLU);
+  
+  // Custom location listeners
+  customLocationsToggle.addEventListener('change', toggleCustomLocationMode);
+  customStartBtn.addEventListener('click', selectCustomStart);
+  customDestBtn.addEventListener('click', selectCustomDestination);
+  
+  // Listen for location change events
+  document.addEventListener('start-location-changed', handleStartLocationChanged);
+  document.addEventListener('destination-location-changed', handleDestLocationChanged);
+  
+  // Initialize custom location UI state
+  customStartBtn.disabled = true;
+  customDestBtn.disabled = true;
+  customStartCoordsEl.style.display = 'none';
+  customDestCoordsEl.style.display = 'none';
 
   /**
    * Load initial data from API
@@ -106,41 +133,138 @@ document.addEventListener('DOMContentLoaded', function() {
 
   /**
    * Plan a trip with selected parameters
+   * @param {boolean} forceRoute - Force route creation even for nearby points
    */
-  async function planTrip() {
-    // Get selected values
-    const vehicleId = vehicleSelect.value;
-    const startCity = startSelect.value;
-    const endCity = destinationSelect.value;
-    
-    // Validate inputs
-    if (!vehicleId || !startCity || !endCity) {
-      showErrorMessage('Please select vehicle, start location, and destination');
-      return;
-    }
-    
-    // Same start and end?
-    if (startCity === endCity) {
-      showErrorMessage('Start and destination cannot be the same');
-      return;
-    }
+  async function planTrip(forceRoute = false) {
+    // Disable the button to prevent multiple submissions
+    planTripBtn.disabled = true;
     
     try {
-      // Show loading state
-      setButtonLoading(true);
+      // Get selected values
+      const vehicleId = vehicleSelect.value;
       
-      // Call API to plan trip
-      const tripData = await api.planTrip(vehicleId, startCity, endCity);
+      // Validate vehicle selection for all cases
+      if (!vehicleId) {
+        showErrorMessage('Please select a vehicle');
+        planTripBtn.disabled = false;
+        return;
+      }
       
-      // Display results
-      displayResults(tripData);
-      
-      // Hide loading state
-      setButtonLoading(false);
+      // Check if we're in custom location mode
+      if (customMode) {
+        // Validate custom locations
+        if (!customStartLocation || !customStartLocation.lat || !customStartLocation.lng) {
+          showErrorMessage('Please select a valid custom start location by clicking the map icon');
+          planTripBtn.disabled = false;
+          return;
+        }
+        
+        if (!customDestLocation || !customDestLocation.lat || !customDestLocation.lng) {
+          showErrorMessage('Please select a valid custom destination by clicking the map icon');
+          planTripBtn.disabled = false;
+          return;
+        }
+        
+        // Calculate distance to check if locations are too close (only if not forcing route)
+        if (!forceRoute) {
+          const distance = calculateDistance(
+            customStartLocation.lat, customStartLocation.lng,
+            customDestLocation.lat, customDestLocation.lng
+          );
+          
+          if (distance < 1) { // Less than 1km apart
+            if (confirm('Start and destination locations are very close. You may not need charging stations for this journey. Do you still want to create this route?')) {
+              // User wants to proceed, call planTrip with forceRoute=true
+              return planTrip(true);
+            } else {
+              planTripBtn.disabled = false;
+              return;
+            }
+          }
+        }
+        
+        // Show loading state
+        setButtonLoading(true);
+        
+        // Call API with custom locations
+        try {
+          const tripData = await api.planTripWithCustomLocations(
+            vehicleId, 
+            customStartLocation, 
+            customDestLocation,
+            forceRoute
+          );
+          
+          // Check for warnings
+          if (tripData.success && tripData.warning) {
+            // Show warning but continue displaying the route
+            console.warn(tripData.warning);
+            showWarningMessage(tripData.warning);
+          }
+          
+          // Display results
+          displayResults(tripData);
+        } catch (error) {
+          console.error('Error planning trip with custom locations:', error);
+          let errorMsg = error.message || 'Unknown error';
+          
+          // Better error handling
+          if (error.response && error.response.data) {
+            const errorData = error.response.data;
+            
+            // Check if we can force a route for this error
+            if (errorData.canForceRoute) {
+              if (confirm(errorData.error + ' Do you want to create a direct route anyway?')) {
+                // User wants to proceed, call planTrip with forceRoute=true
+                planTripBtn.disabled = false;
+                return planTrip(true);
+              }
+              planTripBtn.disabled = false;
+              return;
+            }
+            
+            errorMsg = errorData.error;
+          } else if (errorMsg.includes("too close") || errorMsg.includes("no route found") || errorMsg.includes("not find")) {
+            errorMsg = "Could not find a suitable route between these locations. Try selecting points farther apart or on major roads.";
+          }
+          
+          showErrorMessage('Failed to plan trip: ' + errorMsg);
+        }
+      } else {
+        // Regular city-to-city route
+        const startCity = startSelect.value;
+        const endCity = destinationSelect.value;
+        
+        // Validate dropdown selections
+        if (!startCity || !endCity) {
+          showErrorMessage('Please select both start location and destination from the dropdown');
+          planTripBtn.disabled = false;
+          return;
+        }
+        
+        // Same start and end?
+        if (startCity === endCity) {
+          showErrorMessage('Start and destination cannot be the same');
+          planTripBtn.disabled = false;
+          return;
+        }
+        
+        // Show loading state
+        setButtonLoading(true);
+        
+        // Call API to plan trip
+        const tripData = await api.planTrip(vehicleId, startCity, endCity);
+        
+        // Display results
+        displayResults(tripData);
+      }
     } catch (error) {
       console.error('Error planning trip:', error);
       showErrorMessage('Failed to plan trip: ' + (error.message || 'Unknown error'));
+    } finally {
+      // Always reset button state
       setButtonLoading(false);
+      planTripBtn.disabled = false;
     }
   }
 
@@ -537,5 +661,109 @@ document.addEventListener('DOMContentLoaded', function() {
       hideAllSpkluBtn.disabled = false;
       hideAllSpkluBtn.textContent = 'Hide All SPKLU';
     }
+  }
+
+  // Custom location functionality
+  function toggleCustomLocationMode() {
+    customMode = customLocationsToggle.checked;
+    
+    // Enable/disable dropdowns based on custom mode
+    startSelect.disabled = customMode;
+    destinationSelect.disabled = customMode;
+    
+    // Enable/disable custom location buttons
+    customStartBtn.disabled = !customMode;
+    customDestBtn.disabled = !customMode;
+    
+    // Show/hide custom coordinate displays
+    customStartCoordsEl.style.display = customMode ? 'block' : 'none';
+    customDestCoordsEl.style.display = customMode ? 'block' : 'none';
+    
+    if (!customMode) {
+      // Clear custom locations when switching back to predefined locations
+      clearCustomLocations();
+    } else {
+      // Clear dropdown selections when switching to custom mode
+      startSelect.selectedIndex = 0;
+      destinationSelect.selectedIndex = 0;
+    }
+  }
+  
+  function clearCustomLocations() {
+    customStartLocation = null;
+    customDestLocation = null;
+    customStartCoordsEl.textContent = '';
+    customDestCoordsEl.textContent = '';
+    mapHandler.clearCustomLocations();
+  }
+  
+  function selectCustomStart() {
+    if (!customMode) return;
+    
+    // Disable both buttons while selecting
+    customStartBtn.disabled = true;
+    customDestBtn.disabled = true;
+    
+    mapHandler.enableLocationPicker('start', (position) => {
+      customStartLocation = position;
+      customStartCoordsEl.textContent = `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}`;
+      
+      // Re-enable buttons
+      customStartBtn.disabled = false;
+      customDestBtn.disabled = false;
+    });
+  }
+  
+  function selectCustomDestination() {
+    if (!customMode) return;
+    
+    // Disable both buttons while selecting
+    customStartBtn.disabled = true;
+    customDestBtn.disabled = true;
+    
+    mapHandler.enableLocationPicker('destination', (position) => {
+      customDestLocation = position;
+      customDestCoordsEl.textContent = `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}`;
+      
+      // Re-enable buttons
+      customStartBtn.disabled = false;
+      customDestBtn.disabled = false;
+    });
+  }
+  
+  function handleStartLocationChanged(event) {
+    const position = event.detail;
+    customStartLocation = position;
+    customStartCoordsEl.textContent = `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}`;
+  }
+  
+  function handleDestLocationChanged(event) {
+    const position = event.detail;
+    customDestLocation = position;
+    customDestCoordsEl.textContent = `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}`;
+  }
+
+  /**
+   * Show warning message
+   * @param {string} message - Warning message to show
+   */
+  function showWarningMessage(message) {
+    // Create or get the warning container
+    let warningContainer = document.getElementById('warning-message');
+    if (!warningContainer) {
+      warningContainer = document.createElement('div');
+      warningContainer.id = 'warning-message';
+      warningContainer.className = 'warning-message';
+      document.getElementById('map').appendChild(warningContainer);
+    }
+    
+    // Set message and show
+    warningContainer.textContent = message;
+    warningContainer.style.display = 'block';
+    
+    // Hide after 5 seconds
+    setTimeout(() => {
+      warningContainer.style.display = 'none';
+    }, 5000);
   }
 });

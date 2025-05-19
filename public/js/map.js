@@ -125,6 +125,13 @@ class MapHandler {
         popupContent += `<div style="text-align:center;font-size:40px;margin:10px 0;">⚡🔌🚗</div>`;
       }
       
+      // Create Google Maps link
+      let googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${station.location.lat},${station.location.lng}`;
+      if (station.id && station.id.startsWith('ChI')) {
+        // If we have a Google Place ID, use that for more accurate linking
+        googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${station.location.lat},${station.location.lng}&query_place_id=${station.id}`;
+      }
+      
       // Add station details
       popupContent += `
           <div class="spklu-details">
@@ -133,6 +140,7 @@ class MapHandler {
             <p><strong>Charging Speed:</strong> ${station.chargingSpeed} kW</p>
             <p><strong>Connectors:</strong> ${station.connectorTypes.join(', ')}</p>
             <p><strong>Amenities:</strong> ${station.amenities.length > 0 ? station.amenities.join(', ') : 'None specified'}</p>
+            <p class="gmaps-link"><a href="${googleMapsLink}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a></p>
           </div>
         </div>
       `;
@@ -174,6 +182,9 @@ class MapHandler {
       this.routingControl = null;
     }
 
+    // Save the current SPKLU stations if we're in show all mode
+    const savedSPKLU = this.isShowAllMode ? [...this.googleSPKLUStations] : [];
+
     // Clear charging station markers
     this.markers.chargingStations.forEach(marker => {
       this.map.removeLayer(marker);
@@ -200,7 +211,15 @@ class MapHandler {
 
     this.routePoints = [];
     this.vehiclePosition = 0;
-    this.googleSPKLUStations = [];
+    
+    // Restore saved SPKLU stations if we're in show all mode
+    if (this.isShowAllMode && savedSPKLU.length > 0) {
+      this.googleSPKLUStations = savedSPKLU;
+      // Re-display all SPKLU stations
+      this.displayGoogleSPKLU(savedSPKLU);
+    } else {
+      this.googleSPKLUStations = [];
+    }
   }
 
   /**
@@ -250,21 +269,38 @@ class MapHandler {
    * @param {Object} routeData - Route data from the API
    */
   displayRoute(routeData) {
-    // Clear existing route
+    // Clear existing route without losing SPKLU
     this.clearMap();
 
     const { path, chargingStops, restStops } = routeData.route;
-
-    // Create waypoints for the route
-    const waypoints = path.map(point => 
+    
+    // Create initial waypoints from path
+    const initialWaypoints = path.map(point => 
       L.latLng(point.location.lat, point.location.lng)
     );
+    
+    // Store these points as backup in case routesfound doesn't trigger
+    this.routePoints = initialWaypoints;
 
-    this.routePoints = waypoints;
+    // Create vehicle marker immediately with initial position
+    const vehicleIcon = L.divIcon({
+      className: 'vehicle-icon',
+      html: '<div class="car-emoji">🚙</div>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+
+    if (initialWaypoints.length > 0) {
+      this.markers.vehicle = L.marker(initialWaypoints[0], {
+        icon: vehicleIcon
+      }).addTo(this.map);
+    }
+    
+    console.log("Creating routing control with", initialWaypoints.length, "waypoints");
 
     // Create and add routing control
     this.routingControl = L.Routing.control({
-      waypoints,
+      waypoints: initialWaypoints,
       lineOptions: {
         styles: [{ color: '#1e88e5', opacity: 0.7, weight: 5 }],
         extendToWaypoints: true,
@@ -273,8 +309,43 @@ class MapHandler {
       addWaypoints: false,
       draggableWaypoints: false,
       fitSelectedRoutes: true,
-      showAlternatives: false
+      showAlternatives: false,
+      createMarker: function() { return null; } // Prevent default markers
     }).addTo(this.map);
+    
+    // Wait for route calculation to complete before setting animation points
+    this.routingControl.on('routesfound', (e) => {
+      console.log("Routes found event triggered!");
+      
+      // Extract all coordinates from all route segments
+      if (e.routes && e.routes.length > 0) {
+        console.log("Found route with", e.routes[0].coordinates.length, "coordinates");
+        
+        // Use the coordinates from the actual calculated route
+        const actualRoute = e.routes[0];
+        this.routePoints = actualRoute.coordinates;
+        
+        // Update vehicle position to the start of the route
+        if (this.markers.vehicle && this.routePoints.length > 0) {
+          this.markers.vehicle.setLatLng(this.routePoints[0]);
+        }
+        
+        // Start animation
+        this.animateVehicle();
+      } else {
+        console.warn("No routes found in the event");
+        // Fallback to starting animation with current points
+        this.animateVehicle();
+      }
+    });
+    
+    // Fallback: If no routesfound event after 2 seconds, start animation with current points
+    setTimeout(() => {
+      if (this.routePoints.length > 0 && !this.animationFrame) {
+        console.log("Starting animation with fallback route points");
+        this.animateVehicle();
+      }
+    }, 2000);
 
     // Create markers for charging stops
     chargingStops.forEach(stop => {
@@ -317,45 +388,67 @@ class MapHandler {
       this.markers.restStops.push(marker);
     });
 
-    // Create vehicle marker
-    if (waypoints.length > 0) {
-      const vehicleIcon = L.divIcon({
-        className: 'vehicle-icon',
-        html: '<span style="font-size: 20px;">🚗</span>',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
-      });
-
-      this.markers.vehicle = L.marker(waypoints[0], {
-        icon: vehicleIcon
-      }).addTo(this.map);
-
-      // Start animation
-      this.animateVehicle();
+    // If we're not in show all mode, fetch SPKLU in the current view
+    if (!this.isShowAllMode) {
+      this.fetchSPKLUInView();
     }
-
-    // Fetch SPKLU in current view
-    this.fetchSPKLUInView();
   }
 
   /**
    * Animate vehicle along the route
    */
   animateVehicle() {
+    console.log("Starting vehicle animation with", this.routePoints.length, "points");
+    
     // Cancel any existing animation
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
     }
 
     // If route is too short or animation completed
-    if (this.routePoints.length < 2 || this.vehiclePosition >= this.routePoints.length - 1) {
+    if (!this.routePoints || this.routePoints.length < 2) {
+      console.warn("Route too short for animation:", this.routePoints?.length);
+      return;
+    }
+    
+    // Reset position if at the end
+    if (this.vehiclePosition >= this.routePoints.length - 1) {
       this.vehiclePosition = 0;
     }
 
+    // Calculate animation speed based on route length
+    // Longer routes should move slightly faster
+    const routeLength = this.routePoints.length;
+    const baseSpeed = 0.003;
+    const speedAdjustment = Math.min(routeLength / 1000, 0.004); // Cap the speed adjustment
+    const animationSpeed = baseSpeed + speedAdjustment;
+    
+    console.log(`Animation speed: ${animationSpeed} (route length: ${routeLength} points)`);
+
     const animate = () => {
       // Get current and next points
-      const currentPoint = this.routePoints[Math.floor(this.vehiclePosition)];
-      const nextPoint = this.routePoints[Math.min(Math.floor(this.vehiclePosition) + 1, this.routePoints.length - 1)];
+      const currentIndex = Math.floor(this.vehiclePosition);
+      const nextIndex = Math.min(currentIndex + 1, this.routePoints.length - 1);
+      
+      // Safeguard against invalid indices
+      if (currentIndex < 0 || currentIndex >= this.routePoints.length || 
+          nextIndex < 0 || nextIndex >= this.routePoints.length) {
+        console.warn("Invalid animation indices:", currentIndex, nextIndex, "of", this.routePoints.length);
+        this.vehiclePosition = 0;
+        this.animationFrame = requestAnimationFrame(animate);
+        return;
+      }
+      
+      const currentPoint = this.routePoints[currentIndex];
+      const nextPoint = this.routePoints[nextIndex];
+
+      if (!currentPoint || !nextPoint) {
+        // Skip this frame if we don't have valid points
+        console.warn("Invalid route points at indices:", currentIndex, nextIndex);
+        this.animationFrame = requestAnimationFrame(animate);
+        return;
+      }
 
       // Calculate interpolation within the segment (0 to 1)
       const segmentPosition = this.vehiclePosition % 1;
@@ -367,10 +460,26 @@ class MapHandler {
       // Update vehicle marker position
       if (this.markers.vehicle) {
         this.markers.vehicle.setLatLng([lat, lng]);
+        
+        // Calculate bearing/heading
+        const dx = nextPoint.lng - currentPoint.lng;
+        const dy = nextPoint.lat - currentPoint.lat;
+        const bearing = Math.atan2(dx, dy) * 180 / Math.PI;
+        
+        // Rotate the vehicle icon
+        const vehicleIcon = this.markers.vehicle.getElement();
+        if (vehicleIcon) {
+          const iconInner = vehicleIcon.querySelector('.car-emoji');
+          if (iconInner) {
+            iconInner.style.transform = `rotate(${bearing}deg)`;
+          }
+        }
+      } else {
+        console.warn("Vehicle marker missing during animation");
       }
 
       // Increment position
-      this.vehiclePosition += 0.005;
+      this.vehiclePosition += animationSpeed;
 
       // If we've reached the end, reset to beginning for loop
       if (this.vehiclePosition >= this.routePoints.length - 1) {

@@ -204,11 +204,11 @@ document.addEventListener('DOMContentLoaded', function() {
     `;
     tripDetailsEl.appendChild(startLocation);
     
-    // Combine charging and rest stops for chronological display
+    // Combine all stops for chronological display
     const allStops = [
       ...chargingStops.map(stop => ({
         ...stop,
-        type: 'charging',
+        type: stop.isOptional ? 'optional-charging' : 'charging',
         location: stop.location,
         nodeId: stop.nodeId
       })),
@@ -220,6 +220,12 @@ document.addEventListener('DOMContentLoaded', function() {
       }))
     ];
     
+    // Add leg distance counter
+    let lastPosition = path[0].location;
+    let legDistance = 0;
+    let totalDistance = 0;
+    let currentLeg = 1;
+    
     // Sort stops by their order in the path
     allStops.sort((a, b) => {
       const aIndex = path.findIndex(p => p.id === a.nodeId);
@@ -227,42 +233,146 @@ document.addEventListener('DOMContentLoaded', function() {
       return aIndex - bIndex;
     });
     
+    // Create a header for SPKLU stops section
+    const spkluHeader = document.createElement('div');
+    spkluHeader.className = 'section-header';
+    spkluHeader.innerHTML = `
+      <h3>SPKLU Stops Along Route</h3>
+      <p class="section-desc">All charging stations available along your journey</p>
+    `;
+    tripDetailsEl.appendChild(spkluHeader);
+    
     // Add each stop to trip details
-    allStops.forEach(stop => {
+    allStops.forEach((stop, index) => {
       const stopEl = document.createElement('div');
-      stopEl.className = `stop-item ${stop.type === 'charging' ? 'charging-stop' : 'rest-stop'}`;
       
+      // Set appropriate class based on stop type
+      if (stop.type === 'charging') {
+        stopEl.className = 'stop-item charging-stop';
+      } else if (stop.type === 'optional-charging') {
+        stopEl.className = 'stop-item optional-charging-stop';
+      } else {
+        stopEl.className = 'stop-item rest-stop';
+      }
+      
+      // Calculate approximate distance from start to this stop
+      const stopNode = path.find(p => p.id === stop.nodeId);
+      if (stopNode && stopNode.location) {
+        // Calculate distance from last stop to this one
+        if (lastPosition) {
+          const distance = calculateDistance(
+            lastPosition.lat, lastPosition.lng,
+            stopNode.location.lat, stopNode.location.lng
+          );
+          legDistance += distance;
+          totalDistance += distance;
+        }
+        
+        // Update last position for next distance calculation
+        lastPosition = stopNode.location;
+      }
+      
+      // Create Google Maps link for the SPKLU
+      let googleMapsLink = '';
+      if (stop.location) {
+        googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${stop.location.lat},${stop.location.lng}`;
+        if (stop.stationId && stop.stationId.startsWith('ChI')) {
+          // Use place ID if available
+          googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${stop.location.lat},${stop.location.lng}&query_place_id=${stop.stationId}`;
+        }
+      }
+      
+      // Generate HTML content based on stop type
       if (stop.type === 'charging') {
         stopEl.innerHTML = `
-          <div class="stop-name">🔌 Charging Stop: ${stop.stationName}</div>
-          <div class="stop-details">
-            Charge for ${stop.chargingTimeMinutes} minutes<br>
-            Energy added: ${Math.round(stop.energyAdded)} kWh
+          <div class="stop-icon">🔌</div>
+          <div class="stop-content">
+            <div class="stop-name">Required Charging Stop: ${stop.stationName}</div>
+            <div class="stop-details">
+              <p>Charge for ${Math.round(stop.chargingTimeMinutes)} minutes</p>
+              <p>Energy added: ${Math.round(stop.energyAdded)} kWh</p>
+              <p>Distance from start: ~${Math.round(totalDistance)} km</p>
+              <p class="gmaps-link-small"><a href="${googleMapsLink}" target="_blank">Open in Google Maps</a></p>
+            </div>
+          </div>
+        `;
+      } else if (stop.type === 'optional-charging') {
+        stopEl.innerHTML = `
+          <div class="stop-icon">⚡</div>
+          <div class="stop-content">
+            <div class="stop-name">Additional SPKLU: ${stop.stationName}</div>
+            <div class="stop-details">
+              <p>Optional charging station along your route</p>
+              <p>Distance from start: ~${Math.round(totalDistance)} km</p>
+              <p class="gmaps-link-small"><a href="${googleMapsLink}" target="_blank">Open in Google Maps</a></p>
+            </div>
           </div>
         `;
       } else {
         stopEl.innerHTML = `
-          <div class="stop-name">🛑 Rest Stop: ${stop.name}</div>
-          <div class="stop-details">
-            Rest for ${stop.restTimeMinutes} minutes
+          <div class="stop-icon">🛑</div>
+          <div class="stop-content">
+            <div class="stop-name">Rest Stop: ${stop.name}</div>
+            <div class="stop-details">
+              <p>Rest for ${stop.restTimeMinutes} minutes</p>
+              <p>Distance from start: ~${Math.round(totalDistance)} km</p>
+            </div>
           </div>
         `;
       }
       
       tripDetailsEl.appendChild(stopEl);
+      
+      // Add a leg separator every 2-3 stops
+      if ((index + 1) % 3 === 0 && index < allStops.length - 1) {
+        const legSeparator = document.createElement('div');
+        legSeparator.className = 'leg-separator';
+        legSeparator.innerHTML = `
+          <div class="leg-line"></div>
+          <div class="leg-label">Leg ${currentLeg}</div>
+          <div class="leg-distance">${Math.round(legDistance)} km</div>
+        `;
+        tripDetailsEl.appendChild(legSeparator);
+        legDistance = 0;
+        currentLeg++;
+      }
     });
     
     // Create destination element
-    const destination = document.createElement('div');
-    destination.className = 'stop-item';
-    destination.innerHTML = `
-      <div class="stop-name">Destination: ${path[path.length - 1].name}</div>
-      <div class="stop-details">
-        Total journey: ${Math.round(route.totalDistance)} km<br>
-        Total time: ${Math.round(route.estimatedTripTimeHours * 10) / 10} hours
+    const destinationLocation = document.createElement('div');
+    destinationLocation.className = 'stop-item destination-stop';
+    destinationLocation.innerHTML = `
+      <div class="stop-icon">🏁</div>
+      <div class="stop-content">
+        <div class="stop-name">Destination: ${path[path.length - 1].name}</div>
+        <div class="stop-details">
+          <p>Total trip distance: ${Math.round(route.totalDistance)} km</p>
+          <p>Estimated time: ${Math.round(route.estimatedTripTimeHours * 10) / 10} hours</p>
+        </div>
       </div>
     `;
-    tripDetailsEl.appendChild(destination);
+    tripDetailsEl.appendChild(destinationLocation);
+  }
+  
+  /**
+   * Calculate distance between two coordinates using Haversine formula
+   */
+  function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Radius of the earth in km
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2)
+    ; 
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    const distance = R * c; // Distance in km
+    return distance;
+  }
+  
+  function deg2rad(deg) {
+    return deg * (Math.PI/180);
   }
 
   /**
@@ -428,4 +538,4 @@ document.addEventListener('DOMContentLoaded', function() {
       hideAllSpkluBtn.textContent = 'Hide All SPKLU';
     }
   }
-}); 
+});

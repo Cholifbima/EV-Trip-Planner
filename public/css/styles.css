@@ -207,29 +207,109 @@ select {
 }
 
 .stop-item {
-  border-left: 3px solid #1e88e5;
-  padding: 0.5rem 1rem;
-  margin-bottom: 1rem;
+  display: flex;
+  padding: 10px 12px;
+  margin-bottom: 10px;
   background-color: #f9f9f9;
-  border-radius: 0 4px 4px 0;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.stop-icon {
+  margin-right: 10px;
+  font-size: 18px;
+  padding-top: 2px;
+}
+
+.stop-content {
+  flex: 1;
 }
 
 .charging-stop {
-  border-left-color: #ff9800;
+  border-left: 3px solid #ff9800;
+}
+
+.optional-charging-stop {
+  border-left: 3px solid #4caf50;
 }
 
 .rest-stop {
-  border-left-color: #4caf50;
+  border-left: 3px solid #2196F3;
+}
+
+.destination-stop {
+  border-left: 3px solid #673ab7;
 }
 
 .stop-name {
   font-weight: 600;
-  margin-bottom: 0.25rem;
+  margin-bottom: 6px;
+  font-size: 14px;
 }
 
 .stop-details {
-  font-size: 0.9rem;
+  font-size: 12px;
   color: #666;
+}
+
+.stop-details p {
+  margin: 2px 0;
+}
+
+.gmaps-link-small {
+  margin-top: 5px;
+}
+
+.gmaps-link-small a {
+  font-size: 11px;
+  display: inline-block;
+  background-color: #4285F4;
+  color: white;
+  padding: 3px 8px;
+  border-radius: 3px;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.gmaps-link-small a:hover {
+  background-color: #3367D6;
+}
+
+.leg-separator {
+  position: relative;
+  height: 30px;
+  margin: 5px 0 15px 0;
+  text-align: center;
+}
+
+.leg-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: #ddd;
+  z-index: 1;
+}
+
+.leg-label {
+  display: inline-block;
+  position: relative;
+  background-color: #e0e0e0;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #555;
+  z-index: 2;
+}
+
+.leg-distance {
+  position: absolute;
+  right: 10px;
+  top: 5px;
+  font-size: 11px;
+  color: #777;
 }
 
 /* Map */
@@ -241,9 +321,30 @@ select {
 
 /* Vehicle icon for the route */
 .vehicle-icon {
-  background-color: #1e88e5;
+  background: transparent;
+  border: none;
+}
+
+.vehicle-icon span {
+  display: inline-block;
+  font-size: 20px;
+  transition: transform 0.2s ease;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
+}
+
+/* Use car emoji with better styling */
+.vehicle-icon .car-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background-color: #2196F3;
   border-radius: 50%;
+  color: white;
   border: 2px solid white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
 }
 
 /* Charging station marker */
@@ -369,4 +470,54 @@ footer {
   #map {
     height: 50vh;
   }
+}
+
+/* Hide Leaflet Routing Machine UI but keep the route display */
+.leaflet-routing-container {
+  display: none !important;
+}
+
+/* Only show the route line */
+.leaflet-routing-alt, 
+.leaflet-routing-geocoders,
+.leaflet-routing-error {
+  display: none !important;
+}
+
+.gmaps-link {
+  margin-top: 8px !important;
+  text-align: center;
+}
+
+.gmaps-link a {
+  display: inline-block;
+  background-color: #4285F4;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.gmaps-link a:hover {
+  background-color: #3367D6;
+  text-decoration: none;
+}
+
+/* Trip details styling */
+.section-header {
+  margin: 15px 0 10px 0;
+}
+
+.section-header h3 {
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.section-desc {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 10px;
 } 

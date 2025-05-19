@@ -215,6 +215,12 @@ class AStar {
     // Charging stops and times
     const chargingStops = [];
     
+    // Track all potential charging stations passed
+    const potentialChargingStations = [];
+    
+    // Track nearest charging stations to the route
+    const nearbyChargingStations = new Map();
+    
     while (openSet.size > 0) {
       // Find node with lowest fScore in openSet
       let current = null;
@@ -229,11 +235,87 @@ class AStar {
       
       // If we reached the goal
       if (current === goal) {
+        // Add nearby charging stations that weren't used for charging but are along the route
+        const path = this.reconstructPath(cameFrom, current);
+        const visitedNodes = new Set(path);
+        
+        // Find all nearby charging stations along the final path
+        const additionalChargingStops = [];
+        path.forEach(nodeId => {
+          if (this.nodeToChargingStation[nodeId] && 
+              !chargingStops.some(stop => stop.nodeId === nodeId)) {
+            // This node has charging stations but wasn't used for charging
+            const station = this.nodeToChargingStation[nodeId][0];
+            
+            // Add as a potential charging stop with zero charging time
+            additionalChargingStops.push({
+              nodeId: nodeId,
+              stationId: station.id,
+              stationName: station.name,
+              chargingTime: 0, // No need to charge, just showing it's available
+              energyAdded: 0,
+              isOptional: true, // Mark as optional
+              location: {
+                lat: station.location.lat,
+                lng: station.location.lng
+              }
+            });
+          }
+        });
+        
+        // Add any nearby charging stations that are close to our route
+        nearbyChargingStations.forEach((stations, nodeId) => {
+          if (visitedNodes.has(nodeId)) {
+            stations.forEach(station => {
+              if (!chargingStops.some(stop => stop.stationId === station.id) &&
+                  !additionalChargingStops.some(stop => stop.stationId === station.id)) {
+                additionalChargingStops.push({
+                  nodeId: nodeId,
+                  stationId: station.id,
+                  stationName: station.name,
+                  chargingTime: 0,
+                  energyAdded: 0,
+                  isOptional: true,
+                  location: {
+                    lat: station.location.lat,
+                    lng: station.location.lng
+                  }
+                });
+              }
+            });
+          }
+        });
+        
+        // Sort additional stops by their position in the path
+        additionalChargingStops.sort((a, b) => {
+          return path.indexOf(a.nodeId) - path.indexOf(b.nodeId);
+        });
+        
+        // Combine necessary and optional charging stops
+        const allChargingStops = [...chargingStops, ...additionalChargingStops];
+        
+        // Also calculate coordinates for each charging stop
+        const stopsWithCoordinates = allChargingStops.map(stop => {
+          // Find the node for this stop
+          const node = this.nodes.find(n => n.id === stop.nodeId);
+          
+          // Find the station
+          let station = null;
+          if (this.nodeToChargingStation[stop.nodeId]) {
+            station = this.nodeToChargingStation[stop.nodeId].find(s => s.id === stop.stationId);
+          }
+          
+          return {
+            ...stop,
+            location: station ? station.location : node.location
+          };
+        });
+        
         // Reconstruct the path and return
         return {
           success: true,
-          path: this.reconstructPath(cameFrom, current),
-          chargingStops,
+          path: path,
+          chargingStops: stopsWithCoordinates,
           totalDistance: gScore[goal],
           estimatedTime: this.calculateTripTime(gScore[goal], chargingStops)
         };
@@ -258,10 +340,21 @@ class AStar {
         // Calculate remaining battery after movement
         const remainingBattery = batteryLevel[current] - energyNeeded;
         
+        // Check if current node has a charging station for possible route adjustments
+        let currentNodeHasChargingStation = false;
+        if (this.nodeToChargingStation[current]) {
+          currentNodeHasChargingStation = true;
+          
+          // Store as a nearby charging station
+          if (!nearbyChargingStations.has(current)) {
+            nearbyChargingStations.set(current, this.nodeToChargingStation[current]);
+          }
+        }
+        
         // If we don't have enough battery to reach this neighbor
         if (remainingBattery <= 0) {
           // Check if current node has a charging station
-          if (this.nodeToChargingStation[current]) {
+          if (currentNodeHasChargingStation) {
             // We can charge here
             const station = this.nodeToChargingStation[current][0]; // Use the first charging station
             const compatibleConnector = station.connectorTypes.includes(this.vehicle.connectorType);
@@ -281,6 +374,7 @@ class AStar {
                 nodeId: current,
                 stationId: station.id,
                 stationName: station.name,
+                location: station.location,
                 chargingTime,
                 energyAdded: energyToCharge
               });
@@ -291,10 +385,44 @@ class AStar {
           } else {
             continue; // No charging station and not enough battery, can't use this path
           }
+        } 
+        // Battery level is getting low (less than 20%), prefer to charge if available
+        else if (remainingBattery < (this.vehicle.batteryCapacity * 0.2) && currentNodeHasChargingStation) {
+          // There's a charging station here, so let's charge even though we don't absolutely need to
+          const station = this.nodeToChargingStation[current][0];
+          const energyToCharge = this.vehicle.batteryCapacity - batteryLevel[current];
+          const chargingTime = this.calculateChargingTime(energyToCharge, station.chargingSpeed);
+          
+          // Add charging stop if we haven't already added it
+          const chargingStopExists = chargingStops.some(stop => stop.nodeId === current);
+          if (!chargingStopExists) {
+            chargingStops.push({
+              nodeId: current,
+              stationId: station.id,
+              stationName: station.name,
+              location: station.location,
+              chargingTime,
+              energyAdded: energyToCharge
+            });
+          }
+          
+          // Now we have a full battery
+          batteryLevel[current] = this.vehicle.batteryCapacity;
+          
+          // Slightly favor routes that stop at charging stations
+          // This gives a small bonus to paths that include charging stations along the way
+          // The 0.95 factor means paths with charging stations will be preferred if they're within 5% of the shortest path
+          tentativeGScore = gScore[current] + (neighbor.distance * 0.95);
         }
         
         // Calculate tentative gScore
-        const tentativeGScore = gScore[current] + neighbor.distance;
+        let tentativeGScore = gScore[current] + neighbor.distance;
+        
+        // Slightly favor routes with charging stations (discount their cost a bit)
+        if (currentNodeHasChargingStation) {
+          // Apply a small discount (5%) to paths that include charging stations
+          tentativeGScore = gScore[current] + (neighbor.distance * 0.95);
+        }
         
         // Add neighbor to openSet if not there
         if (!openSet.has(neighborId)) {
@@ -308,7 +436,7 @@ class AStar {
         cameFrom[neighborId] = current;
         gScore[neighborId] = tentativeGScore;
         fScore[neighborId] = gScore[neighborId] + this.heuristic(neighborId, goal);
-        batteryLevel[neighborId] = batteryLevel[current] - energyNeeded;
+        batteryLevel[neighborId] = remainingBattery;
       }
     }
     
